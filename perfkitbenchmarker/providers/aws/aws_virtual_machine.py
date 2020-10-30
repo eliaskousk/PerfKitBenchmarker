@@ -493,6 +493,9 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
       self.max_local_disks = aws_disk.NUM_LOCAL_VOLUMES[self.machine_type]
     self.user_data = None
     self.network = aws_network.AwsNetwork.GetNetwork(self)
+    self.primary_nic = None
+    self.secondary_nic = None
+    self.elastic_ip = None
     self.placement_group = getattr(vm_spec, 'placement_group',
                                    self.network.placement_group)
     self.firewall = aws_network.AwsFirewall.GetFirewall()
@@ -676,6 +679,22 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
         if self.num_vms_per_host:
           self.host.fill_fraction += 1.0 / self.num_vms_per_host
 
+    if FLAGS.aws_dualnics:
+      if self.primary_nic is None:
+        self.primary_nic = aws_network.AwsNetworkInterface(self.region, self.network.subnet.id)
+        self.primary_nic.Create()
+        # self.primary_nic.Attach() # Unused, we attach it to the instance later in Create()
+
+      if self.secondary_nic is None:
+        self.secondary_nic = aws_network.AwsNetworkInterface(self.region, self.network.subnet.id)
+        self.secondary_nic.Create()
+        # self.secondary_nic.Attach() # Unused, we attach it to the instance later in Create()
+
+      if self.elastic_ip is None:
+        self.elastic_ip = aws_network.AwsElasticIP(self.region)
+        self.elastic_ip.Create()
+        self.elastic_ip.Attach(self.primary_nic.id)
+
   def _DeleteDependencies(self):
     """Delete VM dependencies."""
     AwsKeyFileManager.DeleteKeyfile(self.region)
@@ -686,6 +705,19 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
         if self.host not in self.deleted_hosts:
           self.host.Delete()
           self.deleted_hosts.add(self.host)
+
+    if FLAGS.aws_dualnics:
+      if self.elastic_ip:
+        self.elastic_ip.Detach()
+        self.elastic_ip.Delete()
+
+      if self.secondary_nic:
+        self.secondary_nic.Detach()
+        self.secondary_nic.Delete()
+
+      if self.primary_nic:
+        self.primary_nic.Detach()
+        self.primary_nic.Delete()
 
   def _Create(self):
     """Create a VM instance."""
@@ -714,7 +746,6 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
         'ec2',
         'run-instances',
         '--region=%s' % self.region,
-        '--subnet-id=%s' % self.network.subnet.id,
         '--client-token=%s' % self.client_token,
         '--image-id=%s' % self.image,
         '--instance-type=%s' % self.machine_type,
@@ -722,11 +753,21 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
         '--tag-specifications=%s' %
         util.FormatTagSpecifications('instance', tags)]
     if FLAGS.aws_efa:
+      create_cmd.extend(['--subnet-id=%s' % self.network.subnet.id])
       create_cmd.extend([
           '--network-interfaces',
           ','.join(['%s=%s' % item for item in sorted(_EFA_PARAMS.items())])
       ])
+    elif FLAGS.aws_dualnics:
+      create_cmd.extend([
+        "--network-interfaces=[%s]" %
+        ("{\"NetworkInterfaceId\":\"" + self.primary_nic.id + "\"," +
+          "\"DeviceIndex\":0}," +
+         "{\"NetworkInterfaceId\":\"" + self.secondary_nic.id + "\"," +
+          "\"DeviceIndex\":1}")
+      ])
     else:
+      create_cmd.extend(['--subnet-id=%s' % self.network.subnet.id])
       create_cmd.append('--associate-public-ip-address')
     if block_device_map:
       create_cmd.append('--block-device-mappings=%s' % block_device_map)

@@ -47,6 +47,7 @@ flags.DEFINE_string('aws_efa_version', '1.9.4',
                     'Version of AWS EFA to use (must also pass in --aws_efa).')
 flags.DEFINE_multi_enum('aws_endpoint', [], ['s3'],
                         'List of AWS endpoints to create')
+flags.DEFINE_bool('aws_dualnics', False, 'Whether to use two network interfaces.')
 
 FLAGS = flags.FLAGS
 
@@ -591,6 +592,203 @@ class AwsRouteTable(resource.BaseResource):
         '--vpc-peering-connection-id=%s' % vpc_peering_id,
         '--destination-cidr-block=%s' % destination_cidr]
     util.IssueRetryableCommand(create_cmd)
+
+
+class AwsNetworkInterface(resource.BaseResource):
+  """An object representing an Aws Network Interface."""
+
+  def __init__(self, region, subnet_id, instance_id=None, network_interface_id=None):
+    super(AwsNetworkInterface, self).__init__(network_interface_id is not None)
+    self.region = region
+    self.subnet_id = subnet_id
+    self.private_ip_address = None
+    self.security_group_id = None
+    self.instance_id = instance_id
+    self.id = network_interface_id
+    self.attachment_id = None
+
+  def _Create(self):
+    """Creates the network interface."""
+    create_cmd = util.AWS_PREFIX + [
+        'ec2',
+        'create-network-interface',
+        '--region=%s' % self.region,
+        '--subnet-id=%s' % self.subnet_id]
+        # '--groups=%s' % self.security_group_id]
+    stdout, _, _ = vm_util.IssueCommand(create_cmd)
+    response = json.loads(stdout)
+    self.id = response['NetworkInterface']['NetworkInterfaceId']
+    self.private_ip_address = response['NetworkInterface']['PrivateIpAddress']
+    util.AddDefaultTags(self.id, self.region)
+
+  def _Delete(self):
+    """Deletes the network interface."""
+    delete_cmd = util.AWS_PREFIX + [
+        'ec2',
+        'delete-network-interface',
+        '--region=%s' % self.region,
+        '--network-interface-id=%s' % self.id]
+    vm_util.IssueCommand(delete_cmd, raise_on_failure=False)
+
+  def _Exists(self):
+    """Returns true if the network interface exists."""
+    return bool(self.GetDict())
+
+  def GetDict(self):
+    """The 'aws ec2 describe-network-interfaces' for this instance / network interface id.
+
+    Returns:
+      A dict of the single network interface or an empty dict if there are no network interfaces.
+
+    Raises:
+      AssertionError: If there is more than two network interface.
+    """
+    describe_cmd = util.AWS_PREFIX + [
+        'ec2',
+        'describe-network-interfaces',
+        '--region=%s' % self.region]
+
+    if self.id:
+      describe_cmd.append('--filter=Name=network-interface-id,Values=%s' %
+                          self.id)
+    else:
+      raise errors.Error('Must have a network interface id')
+    stdout, _ = util.IssueRetryableCommand(describe_cmd)
+    response = json.loads(stdout)
+    network_interfaces = response['NetworkInterfaces']
+    assert len(network_interfaces) < 2, 'Too many network interfaces.'
+    return network_interfaces[0] if network_interfaces else {}
+
+  def Attach(self, instance_id):
+    """Attaches the network interface to the instance."""
+    if not self.attachment_id and instance_id:
+      self.instance_id = instance_id
+      attach_cmd = util.AWS_PREFIX + [
+          'ec2',
+          'attach-network-interface',
+          '--region=%s' % self.region,
+          '--network-interface-id=%s' % self.id,
+          '--instance-id=%s' % self.instance_id,
+          '--device-index=%s' % "1"] # Don't know what this does!
+      stdout, _ = util.IssueRetryableCommand(attach_cmd)
+      response = json.loads(stdout)
+      self.attachment_id = response['AttachmentId']
+
+  def Detach(self):
+    """Detaches the network interface from the VPC."""
+
+    def _suppress_failure(stdout, stderr, retcode):
+      """Suppresses Detach failure when network interface is in a bad state."""
+      del stdout  # unused
+      if retcode and ('InvalidNetworkInterfaceID.NotFound' in stderr or
+                      'NetworkInterface.NotAttached' in stderr):
+        return True
+      return False
+
+    if self.attachment_id and not self.user_managed:
+      detach_cmd = util.AWS_PREFIX + [
+          'ec2',
+          'detach-network-interface',
+          '--region=%s' % self.region,
+          '--attachment-id=%s' % self.attachment_id]
+      util.IssueRetryableCommand(detach_cmd, suppress_failure=_suppress_failure)
+      self.attachment_id = None
+
+
+class AwsElasticIP(resource.BaseResource):
+  """An object representing an Aws Elastic IP."""
+
+  def __init__(self, region, network_interface_id=None, elastic_ip_id=None):
+    super(AwsElasticIP, self).__init__(elastic_ip_id is not None)
+    self.region = region
+    self.network_interface_id = network_interface_id
+    self.id = None
+    self.association_id = None
+
+  def _Create(self):
+    """Creates (allocates) the Elastic IP."""
+    create_cmd = util.AWS_PREFIX + [
+        'ec2',
+        'allocate-address',
+        '--region=%s' % self.region]
+
+    stdout, _, _ = vm_util.IssueCommand(create_cmd)
+    response = json.loads(stdout)
+    self.id = response['AllocationId']
+    util.AddDefaultTags(self.id, self.region)
+
+  def _Delete(self):
+    """Deletes (releases) the Elastic IP."""
+    delete_cmd = util.AWS_PREFIX + [
+        'ec2',
+        'release-address',
+        '--region=%s' % self.region,
+        '--allocation-id=%s' % self.id]
+    vm_util.IssueCommand(delete_cmd, raise_on_failure=False)
+
+  def _Exists(self):
+    """Returns true if the Elastic IP exists."""
+    return bool(self.GetDict())
+
+  def GetDict(self):
+    """The 'aws ec2 describe-addresses' for this network interface / Elastic IP allocation id.
+
+    Returns:
+      A dict of the Elastic IPs or an empty dict if there are no Elastic IPs.
+
+    Raises:
+      AssertionError: If there is more than one Elastic IP.
+    """
+    describe_cmd = util.AWS_PREFIX + [
+        'ec2',
+        'describe-addresses',
+        '--region=%s' % self.region]
+
+    if self.id:
+      describe_cmd.append('--filter=Name=allocation-id,Values=%s' %
+                          self.id)
+    else:
+      raise errors.Error('Must have an allocation id')
+    stdout, _ = util.IssueRetryableCommand(describe_cmd)
+    response = json.loads(stdout)
+    elastic_ips = response['Addresses']
+    assert len(elastic_ips) < 2, 'Too many internet gateways.'
+    return elastic_ips[0] if elastic_ips else {}
+
+  def Attach(self, network_interface_id):
+    """Attaches (associates) the Elastic IP to the VPC."""
+    if not self.association_id:
+      self.network_interface_id = network_interface_id
+      attach_cmd = util.AWS_PREFIX + [
+          'ec2',
+          'associate-address',
+          '--region=%s' % self.region,
+          '--allocation-id=%s' % self.id,
+          '--network-interface-id=%s' % self.network_interface_id]
+      util.IssueRetryableCommand(attach_cmd)
+      stdout, _ = util.IssueRetryableCommand(attach_cmd)
+      response = json.loads(stdout)
+      self.association_id = response['AssociationId']
+
+  def Detach(self):
+    """Detaches (de-associates) the Elastic IP from the VPC."""
+
+    def _suppress_failure(stdout, stderr, retcode):
+      """Suppresses Detach failure when iElastic IP is in a bad state."""
+      del stdout  # unused
+      if retcode and ('InvalidElasticIP.NotFound' in stderr or
+                      'ElasticIP.NotAssociated' in stderr):
+        return True
+      return False
+
+    if self.association_id and not self.user_managed:
+      detach_cmd = util.AWS_PREFIX + [
+          'ec2',
+          'disassociate-address',
+          '--region=%s' % self.region,
+          '--association-id=%s' % self.association_id]
+      util.IssueRetryableCommand(detach_cmd, suppress_failure=_suppress_failure)
+      self.association_id = None
 
 
 class _AwsRegionalNetwork(network.BaseNetwork):
