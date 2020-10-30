@@ -1,0 +1,20 @@
+iperf:
+  vm_groups:
+    vm_1:
+      cloud: AWS
+      os_type: centos7
+      vm_spec:
+        AWS:
+          machine_type: t3.small
+          image: ami-0e8286b71b81c3cc1
+          zone: eu-central-1
+          boot_disk_size: 8
+    vm_2:
+      cloud: AWS
+      os_type: centos7
+      vm_spec:
+        AWS:
+          machine_type: t3.small
+          image: ami-0e8286b71b81c3cc1
+          zone: eu-central-1
+          boot_disk_size: 8

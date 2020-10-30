@@ -1,0 +1,23 @@
+static_vms:
+  - &vm1
+    ip_address: 195.134.67.151
+    ssh_port: 22
+    user_name: lupo
+    ssh_private_key: /home/lupo/.ssh/uoa_id_rsa
+    install_packages: false
+  - &vm2
+    ip_address: 195.134.67.116
+    ssh_port: 22
+    user_name: lupo
+    ssh_private_key: /home/lupo/.ssh/uoa_id_rsa
+    install_packages: false
+
+iperf:
+  vm_groups:
+    vm_1:
+      static_vms:
+        - *vm2
+    vm_2:
+      static_vms:
+        - *vm1
+
