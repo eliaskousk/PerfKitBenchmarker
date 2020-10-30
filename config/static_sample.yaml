@@ -1,0 +1,15 @@
+static_vms:
+  - &vm1
+    ip_address: 195.134.67.151
+    ssh_port: 22
+    user_name: lupo
+    ssh_private_key: /home/lupo/.ssh/uoa_id_rsa
+    disk_specs:
+        - mount_point: "/tmp/pkb"
+
+sample:
+  vm_groups:
+    default:
+      static_vms:
+        - *vm1
+
