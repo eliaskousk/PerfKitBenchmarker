@@ -418,12 +418,20 @@ class InfluxDBPublisherTestCase(unittest.TestCase):
                 'value': 'non', 'unit': '', 'owner': 'Rackspace',
                 'run_uri': '323', 'sample_uri': '',
                 'timestamp': 123}
+    sample_6 = {'test': 'testc', 'metric': 'some,metric', 'official': 1.0,
+                'value': 'non', 'unit': '', 'owner': 'Rackspace',
+                'run_uri': '323', 'sample_uri': '',
+                'key has spaces' : 'value has spaces',
+                'keyhas,comma' : 'valuehas,comma',
+                'keyhas=equal' : 'valuehas=equal',
+                'timestamp': 123}
 
     sample_1_formatted_key_value = self.test_db._FormatToKeyValue(sample_1)
     sample_2_formatted_key_value = self.test_db._FormatToKeyValue(sample_2)
     sample_3_formatted_key_value = self.test_db._FormatToKeyValue(sample_3)
     sample_4_formatted_key_value = self.test_db._FormatToKeyValue(sample_4)
     sample_5_formatted_key_value = self.test_db._FormatToKeyValue(sample_5)
+    sample_6_formatted_key_value = self.test_db._FormatToKeyValue(sample_6)
 
     expected_sample_1 = ['owner=Rackspace', 'unit=us', 'run_uri=5rtw',
                          'test=testa', 'timestamp=123', 'metric=3',
@@ -440,12 +448,19 @@ class InfluxDBPublisherTestCase(unittest.TestCase):
     expected_sample_5 = ['owner=Rackspace', 'unit=\\"\\"', 'run_uri=323',
                          'test=testc', 'timestamp=123', 'metric=some\,metric',
                          'official=1.0', 'value=non', 'sample_uri=\\"\\"']
+    expected_sample_6 = ['owner=Rackspace', 'unit=\\"\\"', 'run_uri=323',
+                         'test=testc', 'timestamp=123', 'metric=some\,metric',
+                         'official=1.0', 'value=non', 'sample_uri=\\"\\"',
+                         'key\ has\ spaces=value\ has\ spaces',
+                         'keyhas\,comma=valuehas\,comma',
+                         'keyhas\=equal=valuehas\=equal']
 
     six.assertCountEqual(self, sample_1_formatted_key_value, expected_sample_1)
     six.assertCountEqual(self, sample_2_formatted_key_value, expected_sample_2)
     six.assertCountEqual(self, sample_3_formatted_key_value, expected_sample_3)
     six.assertCountEqual(self, sample_4_formatted_key_value, expected_sample_4)
     six.assertCountEqual(self, sample_5_formatted_key_value, expected_sample_5)
+    six.assertCountEqual(self, sample_6_formatted_key_value, expected_sample_6)
 
   def testConstructSample(self):
     sample_with_metadata = {
@@ -456,14 +471,18 @@ class InfluxDBPublisherTestCase(unittest.TestCase):
         'timestamp': 123,
         'metadata': collections.OrderedDict([('info', '1'),
                                              ('more_info', '2'),
-                                             ('bar', 'foo')])}
+                                             ('bar', 'foo'),
+                                             ('key has spaces', 'value has spaces'),
+                                             ('keyhas,comma', 'valuehas,comma'),
+                                             ('keyhas=equal', 'valuehas=equal')])}
 
     constructed_sample = self.test_db._ConstructSample(sample_with_metadata)
 
     sample_results = ('perfkitbenchmarker,test=testc,official=1.0,'
                       'owner=Rackspace,run_uri=323,sample_uri=33,'
-                      'metric=1,unit=MB,product_name=PerfKitBenchmarker,info=1,more_info=2,bar=foo '
-                      'value=non 123000000000')
+                      'metric=1,unit=MB,product_name=PerfKitBenchmarker,info=1,more_info=2,bar=foo,'
+                      'key\ has\ spaces=value\ has\ spaces,keyhas\,comma=valuehas\,comma,'
+                      'keyhas\=equal=valuehas\=equal value=non 123000000000')
 
     self.assertEqual(constructed_sample, sample_results)
 
@@ -476,7 +495,10 @@ class InfluxDBPublisherTestCase(unittest.TestCase):
             'run_uri': '323', 'sample_uri': '33', 'timestamp': 123,
             'metadata': collections.OrderedDict([('info', '1'),
                                                  ('more_info', '2'),
-                                                 ('bar', 'foo')])
+                                                 ('bar', 'foo'),
+                                                 ('key has spaces', 'value has spaces'),
+                                                 ('keyhas,comma', 'valuehas,comma'),
+                                                 ('keyhas=equal', 'valuehas=equal')])
         },
         {
             'test': 'testb', 'metric': '2', 'official': 14.0,
@@ -494,7 +516,8 @@ class InfluxDBPublisherTestCase(unittest.TestCase):
     expected = [
         ('perfkitbenchmarker,test=testc,official=1.0,owner=Rackspace,'
          'run_uri=323,sample_uri=33,metric=1,unit=MB,product_name=PerfKitBenchmarker,info=1,more_info=2,'
-         'bar=foo value=non 123000000000'),
+         'bar=foo,key\ has\ spaces=value\ has\ spaces,keyhas\,comma=valuehas\,comma,'
+         'keyhas\=equal=valuehas\=equal value=non 123000000000'),
         ('perfkitbenchmarker,test=testb,official=14.0,owner=Rackspace,'
          'run_uri=bba3,sample_uri=bb,metric=2,unit=MB,product_name=PerfKitBenchmarker value=non 55000000000'),
         ('perfkitbenchmarker,test=testa,official=47.0,owner=Rackspace,'
@@ -511,7 +534,9 @@ class InfluxDBPublisherTestCase(unittest.TestCase):
     formatted_samples = [
         ('perfkitbenchmarker,test=testc,official=1.0,owner=Rackspace,'
          'run_uri=323,sample_uri=33,metric=1,unit=MB,info=1,more_info=2,'
-         'bar=foo value=non 123000000000'),
+         'bar=foo,key\ has\ spaces=value\ has\ spaces,'
+         'keyhas\,comma=valuehas\,comma,'
+         'keyhas\=equal=valuehas\=equal value=non 123000000000'),
         ('perfkitbenchmarker,test=testb,official=14.0,owner=Rackspace,'
          'run_uri=bba3,sample_uri=bb,metric=2,unit=MB value=non 55000000000'),
         ('perfkitbenchmarker,test=testa,official=47.0,owner=Rackspace,'
@@ -520,8 +545,11 @@ class InfluxDBPublisherTestCase(unittest.TestCase):
 
     expected_output = ('perfkitbenchmarker,test=testc,official=1.0,'
                        'owner=Rackspace,run_uri=323,sample_uri=33,metric=1,'
-                       'unit=MB,info=1,more_info=2,bar=foo value=non '
-                       '123000000000\nperfkitbenchmarker,test=testb,'
+                       'unit=MB,info=1,more_info=2,bar=foo,'
+                       'key\ has\ spaces=value\ has\ spaces,'
+                       'keyhas\,comma=valuehas\,comma,'
+                       'keyhas\=equal=valuehas\=equal value=non 123000000000\n'
+                       'perfkitbenchmarker,test=testb,'
                        'official=14.0,owner=Rackspace,run_uri=bba3,'
                        'sample_uri=bb,metric=2,unit=MB value=non 55000000000\n'
                        'perfkitbenchmarker,test=testa,official=47.0,'
