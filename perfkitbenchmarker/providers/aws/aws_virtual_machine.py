@@ -219,6 +219,7 @@ def GetBlockDeviceMap(machine_type, root_volume_size_gb=None,
           'region must be provided if image_id is specified')
     root_block_device = GetRootBlockDeviceSpecForImage(image_id, region)
     root_block_device['Ebs']['VolumeSize'] = root_volume_size_gb
+    root_block_device['Ebs']['DeleteOnTermination'] = True
     # The 'Encrypted' key must be removed or the CLI will complain
     root_block_device['Ebs'].pop('Encrypted')
     mappings.append(root_block_device)
