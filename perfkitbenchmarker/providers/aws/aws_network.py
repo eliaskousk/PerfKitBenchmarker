@@ -603,6 +603,7 @@ class AwsNetworkInterface(resource.BaseResource):
     self.region = region
     self.subnet_id = subnet_id
     self.private_ip_address = None
+    self.mac_address = None
     self.security_group_id = None
     self.instance_id = instance_id
     self.id = network_interface_id
@@ -620,6 +621,7 @@ class AwsNetworkInterface(resource.BaseResource):
     response = json.loads(stdout)
     self.id = response['NetworkInterface']['NetworkInterfaceId']
     self.private_ip_address = response['NetworkInterface']['PrivateIpAddress']
+    self.mac_address = response['NetworkInterface']['MacAddress']
     util.AddDefaultTags(self.id, self.region)
 
   def _Delete(self):
