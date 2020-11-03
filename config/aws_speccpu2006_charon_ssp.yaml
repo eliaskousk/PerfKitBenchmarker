@@ -5,7 +5,6 @@ speccpu2006_charon_ssp:
       os_type: centos7
       vm_spec:
         AWS:
-          machine_type: t3.small
-          image: ami-0e8286b71b81c3cc1
+          machine_type: c5.2xlarge
+          image: ami-041e264e582b25875
           zone: eu-central-1
-          boot_disk_size: 8
