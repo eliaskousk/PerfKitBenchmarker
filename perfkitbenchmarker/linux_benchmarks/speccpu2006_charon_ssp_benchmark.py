@@ -25,6 +25,7 @@ SPEC CPU2006 homepage: http://www.spec.org/cpu2006/
 from absl import flags
 from perfkitbenchmarker import configs
 from perfkitbenchmarker import sample
+from perfkitbenchmarker import vm_util
 from perfkitbenchmarker.linux_packages import speccpu
 from perfkitbenchmarker.linux_packages import speccpu2006
 
@@ -61,9 +62,19 @@ speccpu2006_charon_ssp:
 #      disk_spec: *default_50_gb
 #"""
 
+ssh_options = '-2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o ConnectTimeout=5 -o GSSAPIAuthentication=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10'
+
 
 def GetConfig(user_config):
   return configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
+
+
+@vm_util.Retry(log_errors=False, poll_interval=1)
+def WaitForSSPBootCompletion(benchmark_spec):
+  vm = benchmark_spec.vms[0]
+
+  cmd = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s hostname' % (ssh_options, vm.secondary_nic.private_ip_address)
+  stdout, _ = vm.RemoteCommand(cmd, retries=1, suppress_warning=True)
 
 
 def Prepare(benchmark_spec):
@@ -75,16 +86,14 @@ def Prepare(benchmark_spec):
   """
   vm = benchmark_spec.vms[0]
 
-  # vm.Install('speccpu2006')
-  # # Set attribute outside of the install function, so benchmark will work
-  # # even with --install_packages=False.
-  # config = speccpu2006.GetSpecInstallConfig(vm.GetScratchDir())
-  # setattr(vm, speccpu.VM_STATE_ATTR, config)
+  cmd = "sudo sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g' /opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg" % vm.secondary_nic.mac_address
+  stdout, _ = vm.RemoteCommand(cmd)
 
-  # vm.InstallPackages('net-tools')
-
-  # stdout, _ = vm.RemoteCommand('cat %s' % '/etc/hosts')
+  cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
+  stdout, _ = vm.RemoteCommand(cmd)
   # assert stdout.strip() == '1234567890'
+
+  WaitForSSPBootCompletion(benchmark_spec)
 
 
 def Run(benchmark_spec):
@@ -107,18 +116,7 @@ def Run(benchmark_spec):
   # speccpu.Run(vm, 'runspec',
   #             FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset, version_specific_parameters)
 
-  internal_ip = None
-  cmd = None
-  if vm.secondary_nic and vm.secondary_nic.private_ip_address:
-    internal_ip = vm.secondary_nic.private_ip_address
-    cmd = '/sbin/ifconfig -a && '\
-          'sudo /sbin/ifconfig ens6 %s netmask 255.255.240.0 broadcast 172.31.15.255 && '\
-          '/sbin/ifconfig -a && '\
-          'ping -c 3 %s' % (internal_ip, internal_ip)
-  elif vm.primary_nic and vm.primary_nic.private_ip_address:
-    internal_ip = vm.primary_nic.private_ip_address
-    cmd = '/sbin/ifconfig -a && '\
-          'ping -c 3 %s' % internal_ip
+  cmd = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s /cpu2006_test.sh' % (ssh_options, vm.secondary_nic.private_ip_address)
   vm.RobustRemoteCommand(cmd)
 
   metadata = dict()
@@ -148,4 +146,11 @@ def Cleanup(benchmark_spec):
         required to run the benchmark.
   """
   vm = benchmark_spec.vms[0]
+
+  cmd = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root poweroff &' % ssh_options
+  stdout, _ = vm.RemoteCommand(cmd)
+
+  cmd = 'sleep 30'
+  stdout, _ = vm.RemoteCommand(cmd)
+
   speccpu.Uninstall(vm)
