@@ -24,17 +24,16 @@ SPEC CPU2006 homepage: http://www.spec.org/cpu2006/
 
 from absl import flags
 from perfkitbenchmarker import configs
-from perfkitbenchmarker import sample
 from perfkitbenchmarker import vm_util
 from perfkitbenchmarker.linux_packages import speccpu
-from perfkitbenchmarker.linux_packages import speccpu2006
+from perfkitbenchmarker.linux_packages import speccpu2006_charon_ssp
 
 
 FLAGS = flags.FLAGS
 
 _SPECINT_BENCHMARKS = frozenset([
     'perlbench', 'bzip2', 'gcc', 'mcf', 'gobmk', 'hmmer', 'sjeng',
-    'libquantum', 'h264ref', 'omnetpp', 'astar', 'xalancbmk'])
+    'libquantum', 'h264ref', 'omnetpp', 'astar', 'xalancbmk', 'specrand'])
 _SPECFP_BENCHMARKS = frozenset([
     'bwaves', 'gamess', 'milc', 'zeusmp', 'gromacs', 'cactusADM',
     'leslie3d', 'namd', 'dealII', 'soplex', 'povray', 'calculix',
@@ -42,11 +41,11 @@ _SPECFP_BENCHMARKS = frozenset([
 _SPECCPU_SUBSETS = frozenset(['int', 'fp', 'all'])
 
 flags.DEFINE_enum(
-    'spec_cpu_2006_charon_ssp_benchmark_subset', 'int',
+    'spec_cpu_2006_charon_ssp_benchmark_subset', 'specrand',
     _SPECFP_BENCHMARKS | _SPECINT_BENCHMARKS | _SPECCPU_SUBSETS,
     'Used by the PKB speccpu2006 benchmark. Specifies a subset of SPEC CPU2006 '
     'benchmarks to run.')
-flags.DEFINE_enum('spec_cpu_2006_charon_ssp_runtime_metric', 'rate', ['rate', 'speed'],
+flags.DEFINE_enum('spec_cpu_2006_charon_ssp_runtime_metric', 'speed', ['speed', 'rate'],
                   'SPEC test to run. Speed is time-based metric, rate is '
                   'throughput-based metric.')
 
@@ -62,8 +61,13 @@ speccpu2006_charon_ssp:
 #      disk_spec: *default_50_gb
 #"""
 
-ssh_options = '-2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o ConnectTimeout=5 -o GSSAPIAuthentication=no -o ServerAliveInterval=30 -o ServerAliveCountMax=10'
+ssp_config = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
 
+ssh_options = '-2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '\
+              '-o IdentitiesOnly=yes -o PreferredAuthentications=publickey '\
+              '-o PasswordAuthentication=no -o GSSAPIAuthentication=no '\
+              '-o ServerAliveInterval=30 -o ServerAliveCountMax=10 '\
+              '-o ConnectTimeout=5'
 
 def GetConfig(user_config):
   return configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
@@ -73,7 +77,9 @@ def GetConfig(user_config):
 def WaitForSSPBootCompletion(benchmark_spec):
   vm = benchmark_spec.vms[0]
 
-  cmd = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s hostname' % (ssh_options, vm.secondary_nic.private_ip_address)
+  ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s ' % (ssh_options,
+                                                      vm.secondary_nic.private_ip_address)
+  cmd = ssh_prefix + 'hostname'
   stdout, _ = vm.RemoteCommand(cmd, retries=1, suppress_warning=True)
 
 
@@ -86,7 +92,15 @@ def Prepare(benchmark_spec):
   """
   vm = benchmark_spec.vms[0]
 
-  cmd = "sudo sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g' /opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg" % vm.secondary_nic.mac_address
+  vm.Install('speccpu2006_charon_ssp')
+  # Set attribute outside of the install function, so benchmark will work
+  # even with --install_packages=False.
+  config = speccpu2006_charon_ssp.GetSpecInstallConfig(
+    speccpu2006_charon_ssp.SOLARIS_VDISK_BENCHMARK_INSTALL_DIR)
+  setattr(vm, speccpu.VM_STATE_ATTR, config)
+
+  sed = "sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g'" % vm.secondary_nic.mac_address
+  cmd = 'sudo %s %s' % (sed, ssp_config)
   stdout, _ = vm.RemoteCommand(cmd)
 
   cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
@@ -108,34 +122,36 @@ def Run(benchmark_spec):
   """
   vm = benchmark_spec.vms[0]
 
-  # version_specific_parameters = []
-  # if FLAGS.spec_cpu_2006_charon_ssp_runtime_metric == 'rate':
-  #   version_specific_parameters.append(' --rate=%s ' % vm.NumCpusForBenchmark())
-  # else:
-  #   version_specific_parameters.append(' --speed ')
-  # speccpu.Run(vm, 'runspec',
-  #             FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset, version_specific_parameters)
+  version_specific_parameters = []
+  if FLAGS.spec_cpu_2006_charon_ssp_runtime_metric == 'speed':
+    version_specific_parameters.append(' --speed ')
+  else:
+    version_specific_parameters.append(' --rate=%s ' % vm.NumCpusForBenchmark())
 
-  cmd = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s /cpu2006_test.sh' % (ssh_options, vm.secondary_nic.private_ip_address)
-  vm.RobustRemoteCommand(cmd)
+  ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s' % (ssh_options,
+                                                             vm.secondary_nic.private_ip_address)
 
-  metadata = dict()
-  metadata['speccpu2006_metadata'] = 'sample'
-  return [sample.Sample('speccpu2006_metric', 1337.0, 'sec', metadata)]
+  speccpu.RunInCharonSSP(vm, ssh_prefix, 'runspec',
+              FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset,
+              version_specific_parameters)
 
-  # log_files = []
-  # # FIXME(liquncheng): Only reference runs generate SPEC scores. The log
-  # # id is hardcoded as 001, which might change with different runspec
-  # # parameters. SPEC CPU2006 will generate different logs for build, test
-  # # run, training run and ref run.
-  # if FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset in _SPECINT_BENCHMARKS | set(['int', 'all']):
-  #   log_files.append('CINT2006.001.ref.txt')
-  # if FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset in _SPECFP_BENCHMARKS | set(['fp', 'all']):
-  #   log_files.append('CFP2006.001.ref.txt')
-  # partial_results = FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset not in _SPECCPU_SUBSETS
-  #
-  # return speccpu.ParseOutput(vm, log_files, partial_results,
-  #                            FLAGS.spec_cpu_2006_charon_ssp_runtime_metric)
+  # metadata = dict()
+  # metadata['speccpu2006_metadata'] = 'sample'
+  # return [sample.Sample('speccpu2006_metric', 1337.0, 'sec', metadata)]
+
+  log_files = []
+  # FIXME(liquncheng): Only reference runs generate SPEC scores. The log
+  # id is hardcoded as 001, which might change with different runspec
+  # parameters. SPEC CPU2006 will generate different logs for build, test
+  # run, training run and ref run.
+  if FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset in _SPECINT_BENCHMARKS | set(['int', 'all']):
+    log_files.append('CINT2006.001.ref.txt')
+  if FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset in _SPECFP_BENCHMARKS | set(['fp', 'all']):
+    log_files.append('CFP2006.001.ref.txt')
+  partial_results = FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset not in _SPECCPU_SUBSETS
+
+  return speccpu.ParseOutputFromCharonSSP(vm, ssh_prefix, log_files, partial_results,
+                             FLAGS.spec_cpu_2006_charon_ssp_runtime_metric)
 
 
 def Cleanup(benchmark_spec):

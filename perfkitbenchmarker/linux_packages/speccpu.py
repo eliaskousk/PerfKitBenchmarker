@@ -264,6 +264,7 @@ class SpecInstallConfigurations(object):
     self.runspec_config = None
     self.base_clang_flag_file_path = None
     self.clang_flag_file_path = None
+    self.charon_ssp = False
 
   def UpdateConfig(self, scratch_dir):
     """Updates the configuration after other attributes have been set.
@@ -291,22 +292,24 @@ def InstallSPECCPU(vm, speccpu_vm_state):
     vm: Vm on which speccpu is installed.
     speccpu_vm_state: SpecInstallConfigurations. Install configuration for spec.
   """
-  scratch_dir = vm.GetScratchDir()
-  vm.RemoteCommand('chmod 777 {0}'.format(scratch_dir))
-  try:
-    # Since this will override 'build_tools' installation, install this
-    # before we install 'build_tools' package
-    _PrepareWithPreprovisionedTarFile(vm, speccpu_vm_state)
-    _CheckTarFile(vm, speccpu_vm_state.runspec_config,
-                  stages.PROVISION in FLAGS.run_stage,
-                  speccpu_vm_state)
-  except errors.Setup.BadPreprovisionedDataError:
-    _CheckIsoAndCfgFile(speccpu_vm_state.runspec_config,
-                        speccpu_vm_state.base_iso_file_path,
-                        speccpu_vm_state.base_clang_flag_file_path)
-    _PrepareWithIsoFile(vm, speccpu_vm_state)
-  vm.Install('speccpu')
-
+  if not speccpu_vm_state.charon_ssp:
+    scratch_dir = vm.GetScratchDir()
+    vm.RemoteCommand('chmod 777 {0}'.format(scratch_dir))
+    try:
+      # Since this will override 'build_tools' installation, install this
+      # before we install 'build_tools' package
+      _PrepareWithPreprovisionedTarFile(vm, speccpu_vm_state)
+      _CheckTarFile(vm, speccpu_vm_state.runspec_config,
+                    stages.PROVISION in FLAGS.run_stage,
+                    speccpu_vm_state)
+    except errors.Setup.BadPreprovisionedDataError:
+      _CheckIsoAndCfgFile(speccpu_vm_state.runspec_config,
+                          speccpu_vm_state.base_iso_file_path,
+                          speccpu_vm_state.base_clang_flag_file_path)
+      _PrepareWithIsoFile(vm, speccpu_vm_state)
+    vm.Install('speccpu')
+  else:
+    pass # TODO Install on Charon SSP if not already installed in vdisk
 
 def Install(vm):
   """Installs SPECCPU dependencies."""
@@ -485,7 +488,7 @@ def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
 
   metadata = {
       'runspec_config': speccpu_vm_state.runspec_config,
-      'runspec_config_md5sum': _GenerateMd5sum(speccpu_vm_state.runspec_config),
+      # 'runspec_config_md5sum': _GenerateMd5sum(speccpu_vm_state.runspec_config),
       'runspec_iterations': str(FLAGS.runspec_iterations),
       'runspec_enable_32bit': str(FLAGS.runspec_enable_32bit),
       'runspec_define': FLAGS.runspec_define,
@@ -586,7 +589,36 @@ def ParseOutput(vm, log_files, is_partial_results, runspec_metric,
   for log in log_files:
     results_dir = results_directory or '%s/result' % speccpu_vm_state.spec_dir
     stdout, _ = vm.RemoteCommand(
-        'cat %s/%s' % (results_dir, log), should_log=True)
+        "%s 'cat %s/%s'" % (results_dir, log), should_log=True)
+    results.extend(_ExtractScore(
+        stdout, vm, FLAGS.runspec_keep_partial_results or is_partial_results,
+        runspec_metric))
+
+  return results
+
+def ParseOutputFromCharonSSP(vm, ssh_prefix, log_files, is_partial_results, runspec_metric,
+                results_directory=None):
+  """Retrieves the SPEC CPU output from the VM and parses it.
+
+  Args:
+    vm: Vm. The vm instance where SPEC CPU was run.
+    log_files: String. Path of the directory on the remote machine where the
+        SPEC files, including binaries and logs, are located.
+    is_partial_results: Boolean. True if the output is partial result.
+    runspec_metric: String. Indicates whether this is spec speed or rate run.
+    results_directory: Optional String. Indicates where the spec directory is.
+        Defaults to the results folder inside the speccpu directory.
+
+  Returns:
+    A list of samples to be published (in the same format as Run() returns).
+  """
+  speccpu_vm_state = getattr(vm, VM_STATE_ATTR, None)
+  results = []
+
+  for log in log_files:
+    results_dir = results_directory or '%s/result' % speccpu_vm_state.spec_dir
+    stdout, _ = vm.RemoteCommand(
+        "%s 'cat %s/%s'" % (ssh_prefix, results_dir, log), should_log=True)
     results.extend(_ExtractScore(
         stdout, vm, FLAGS.runspec_keep_partial_results or is_partial_results,
         runspec_metric))
@@ -628,6 +660,48 @@ def Run(vm, cmd, benchmark_subset, version_specific_parameters=None):
   return vm.RobustRemoteCommand(cmd)
 
 
+def RunInCharonSSP(vm, ssh_prefix, cmd, benchmark_subset, version_specific_parameters=None):
+  """Runs SPEC CPU on the target vm.
+
+  Args:
+    vm: Vm. The vm on which speccpu will run.
+    ssh_prefix: Run the command with ssh.
+    cmd: command to issue.
+    benchmark_subset: List. Subset of the benchmark to run.
+    version_specific_parameters: List. List of parameters for specific versions.
+
+  Returns:
+    A Tuple of (stdout, stderr) the run output.
+  """
+  speccpu_vm_state = getattr(vm, VM_STATE_ATTR, None)
+
+  runspec_flags = [
+      ('config', posixpath.basename(speccpu_vm_state.cfg_file_path)),
+      ('tune', FLAGS.spec_runmode), ('size', 'ref'),
+      ('iterations', FLAGS.runspec_iterations)]
+
+  if FLAGS.runspec_define:
+    for runspec_define in FLAGS.runspec_define.split(','):
+      runspec_flags.append(('define', runspec_define))
+
+  fl = ' '.join('--{0}={1}'.format(k, v) for k, v in runspec_flags)
+
+  if version_specific_parameters:
+    fl += ' '.join(version_specific_parameters)
+
+  runspec_cmd = '{cmd} --noreportable {flags} {subset}'.format(
+      cmd=cmd, flags=fl, subset=benchmark_subset)
+
+  cmd = ' && '.join((
+      'cd {0}'.format(speccpu_vm_state.spec_dir),
+      'rm -rf result',
+      '. ./shrc',
+      runspec_cmd,
+      'ls -al {0}/result/'.format(speccpu_vm_state.spec_dir)))
+
+  return vm.RobustRemoteCommand("%s '%s'" % (ssh_prefix, cmd))
+
+
 def Uninstall(vm):
   """Cleans up SPECCPU from the target vm.
 
@@ -636,11 +710,14 @@ def Uninstall(vm):
   """
   speccpu_vm_state = getattr(vm, VM_STATE_ATTR, None)
   if speccpu_vm_state:
-    if speccpu_vm_state.mount_dir:
-      try:
-        vm.RemoteCommand('sudo umount {0}'.format(speccpu_vm_state.mount_dir))
-      except errors.VirtualMachine.RemoteCommandError:
-        # Even if umount failed, continue to clean up.
-        logging.exception('umount failed.')
-    targets = ' '.join(p for p in speccpu_vm_state.__dict__.values() if p)
-    vm.RemoteCommand('rm -rf {0}'.format(targets))
+    if not speccpu_vm_state.charon_ssp:
+      if speccpu_vm_state.mount_dir:
+        try:
+          vm.RemoteCommand('sudo umount {0}'.format(speccpu_vm_state.mount_dir))
+        except errors.VirtualMachine.RemoteCommandError:
+          # Even if umount failed, continue to clean up.
+          logging.exception('umount failed.')
+      targets = ' '.join(p for p in speccpu_vm_state.__dict__.values() if p)
+      vm.RemoteCommand('rm -rf {0}'.format(targets))
+    else:
+      pass # TODO: Uninstall from Charon SSP if not already installed in vdisk
