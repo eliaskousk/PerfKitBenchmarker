@@ -1,0 +1,18 @@
+iperf_charon_ssp:
+  vm_groups:
+    vm_1:
+      cloud: AWS
+      os_type: centos7
+      vm_spec:
+        AWS:
+          machine_type: c5.2xlarge
+          image: ami-041e264e582b25875
+          zone: eu-central-1
+    vm_2:
+      cloud: AWS
+      os_type: centos7
+      vm_spec:
+        AWS:
+          machine_type: c5.2xlarge
+          image: ami-041e264e582b25875
+          zone: eu-central-1
