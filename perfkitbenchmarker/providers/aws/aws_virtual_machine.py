@@ -496,7 +496,8 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
     self.network = aws_network.AwsNetwork.GetNetwork(self)
     self.primary_nic = None
     self.secondary_nic = None
-    self.elastic_ip = None
+    self.primary_eip = None
+    self.secondary_eip = None
     self.placement_group = getattr(vm_spec, 'placement_group',
                                    self.network.placement_group)
     self.firewall = aws_network.AwsFirewall.GetFirewall()
@@ -691,10 +692,17 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
         self.secondary_nic.Create()
         # self.secondary_nic.Attach() # Unused, we attach it to the instance later in Create()
 
-      if self.elastic_ip is None:
-        self.elastic_ip = aws_network.AwsElasticIP(self.region)
-        self.elastic_ip.Create()
-        self.elastic_ip.Attach(self.primary_nic.id)
+      if self.primary_eip is None:
+        self.primary_eip = aws_network.AwsElasticIP(self.region)
+        self.primary_eip.Create()
+        self.primary_eip.Attach(self.primary_nic.id)
+        self.primary_nic.public_ip_address = self.primary_eip.ip
+
+      if self.secondary_eip is None and FLAGS.aws_dualeips:
+        self.secondary_eip = aws_network.AwsElasticIP(self.region)
+        self.secondary_eip.Create()
+        self.secondary_eip.Attach(self.secondary_nic.id)
+        self.secondary_nic.public_ip_address = self.secondary_eip.ip
 
   def _DeleteDependencies(self):
     """Delete VM dependencies."""
@@ -708,9 +716,13 @@ class AwsVirtualMachine(virtual_machine.BaseVirtualMachine):
           self.deleted_hosts.add(self.host)
 
     if FLAGS.aws_dualnics:
-      if self.elastic_ip:
-        self.elastic_ip.Detach()
-        self.elastic_ip.Delete()
+      if self.primary_eip:
+        self.primary_eip.Detach()
+        self.primary_eip.Delete()
+
+      if self.secondary_eip and FLAGS.aws_dualeips:
+        self.secondary_eip.Detach()
+        self.secondary_eip.Delete()
 
       if self.secondary_nic:
         self.secondary_nic.Detach()

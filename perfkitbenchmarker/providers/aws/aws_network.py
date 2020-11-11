@@ -48,6 +48,7 @@ flags.DEFINE_string('aws_efa_version', '1.9.4',
 flags.DEFINE_multi_enum('aws_endpoint', [], ['s3'],
                         'List of AWS endpoints to create')
 flags.DEFINE_bool('aws_dualnics', False, 'Whether to use two network interfaces.')
+flags.DEFINE_bool('aws_dualeips', False, 'Whether to use two Elastic IPs.')
 
 FLAGS = flags.FLAGS
 
@@ -601,6 +602,7 @@ class AwsNetworkInterface(resource.BaseResource):
     super(AwsNetworkInterface, self).__init__(network_interface_id is not None)
     self.region = region
     self.subnet_id = subnet_id
+    self.public_ip_address = None
     self.private_ip_address = None
     self.mac_address = None
     self.security_group_id = None
@@ -705,6 +707,7 @@ class AwsElasticIP(resource.BaseResource):
     self.region = region
     self.network_interface_id = network_interface_id
     self.id = None
+    self.ip = None
     self.association_id = None
 
   def _Create(self):
@@ -754,8 +757,12 @@ class AwsElasticIP(resource.BaseResource):
     stdout, _ = util.IssueRetryableCommand(describe_cmd)
     response = json.loads(stdout)
     elastic_ips = response['Addresses']
-    assert len(elastic_ips) < 2, 'Too many internet gateways.'
-    return elastic_ips[0] if elastic_ips else {}
+    assert len(elastic_ips) < 2, 'Too many elastic IPs.'
+    if elastic_ips:
+      self.ip = elastic_ips[0]['PublicIp']
+      return elastic_ips[0]
+    else:
+      return {}
 
   def Attach(self, network_interface_id):
     """Attaches (associates) the Elastic IP to the VPC."""
