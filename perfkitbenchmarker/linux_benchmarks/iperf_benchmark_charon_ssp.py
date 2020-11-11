@@ -401,14 +401,14 @@ def Run(benchmark_spec):
       # Send traffic in both directions
       for sending_vm, receiving_vm in vms, reversed(vms):
         # Send using external IP addresses
-        # if vm_util.ShouldRunOnExternalIpAddress():
-        #   results.append(
-        #       _RunIperf(sending_vm,
-        #                 receiving_vm,
-        #                 receiving_vm.ip_address,
-        #                 thread_count,
-        #                 vm_util.IpAddressMetadata.EXTERNAL,
-        #                 protocol))
+        if vm_util.ShouldRunOnExternalIpAddress() and FLAGS.aws_dualeips:
+          results.append(
+              _RunIperf(sending_vm,
+                        receiving_vm,
+                        receiving_vm.secondary_nic.public_ip_address,
+                        thread_count,
+                        vm_util.IpAddressMetadata.EXTERNAL,
+                        protocol))
 
         # Send using internal IP addresses
         if vm_util.ShouldRunOnInternalIpAddress(sending_vm, receiving_vm):
