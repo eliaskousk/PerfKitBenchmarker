@@ -19,24 +19,37 @@ import posixpath
 
 from perfkitbenchmarker import errors
 from perfkitbenchmarker import linux_packages
+from perfkitbenchmarker import vm_util
 
-PACKAGE_NAME = 'iperf_charon_ssp'
-IPERF_TAR = 'iperf-2.0.13.tar.gz'
-IPERF_URL = 'https://sourceforge.net/projects/iperf2/files/iperf-2.0.13.tar.gz'
-IPERF_DIR = '%s/iperf-2.0.13' % linux_packages.INSTALL_DIR
+PACKAGE_NAME = 'iperf_charon_ssp' # Should be same as related BENCHMARK_NAME
+PACKAGE_DATA = ['iperf2.solaris']
+IPERF_BIN = 'iperf2.solaris'
+
+ssh_options = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '\
+              '-o IdentitiesOnly=yes -o PreferredAuthentications=publickey '\
+              '-o PasswordAuthentication=no -o GSSAPIAuthentication=no '\
+              '-o ServerAliveInterval=30 -o ServerAliveCountMax=10 '\
+              '-o ConnectTimeout=5 -2 -i ~/.ssh/ssp_solaris_rsa'
 
 
 def _Install(vm):
   """Installs the iperf package on the VM."""
-  # vm.Install('build_tools')
-  # vm.Install('wget')
-  #
-  # vm.RemoteCommand('wget -O %s/%s %s' %
-  #                  (linux_packages.INSTALL_DIR, IPERF_TAR, IPERF_URL))
-  #
-  # vm.RemoteCommand('cd %s; tar xvf %s; cd %s; '
-  #                  './configure; make; sudo make install' %
-  #                  (linux_packages.INSTALL_DIR, IPERF_TAR, IPERF_DIR))
+
+  vm.InstallPreprovisionedBenchmarkData(PACKAGE_NAME,
+                                        PACKAGE_DATA,
+                                        vm_util.VM_TMP_DIR)
+
+  scp_cmd = 'scp %s -i ~/.ssh/ssp_solaris_rsa %s root@%s:/iperf'\
+            % (ssh_options,
+               posixpath.join(vm_util.VM_TMP_DIR, 'iperf2.solaris'),
+               vm.secondary_nic.private_ip_address)
+
+  stdout, _ = vm.RemoteCommand(scp_cmd)
+
+  ssh_prefix = 'ssh %s root@%s'\
+               % (ssh_options, vm.secondary_nic.private_ip_address)
+
+  stdout, _ = vm.RemoteCommand("%s 'chmod +x /iperf'" % ssh_prefix)
 
 
 def YumInstall(vm):
