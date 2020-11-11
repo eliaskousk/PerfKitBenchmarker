@@ -79,31 +79,42 @@ iperf_charon_ssp:
       vm_spec: *default_single_core
 """
 
-IPERF_PORT = 20000
-IPERF_UDP_PORT = 25000
-IPERF_RETRIES = 5
-
 BENCHMARK_DATA = {
     'iperf2.solaris':
         '59b3d0a619b4ddec11813af6e24e674e6dd77ddc4b09cdac7c71461b4f127af6'}
 
+IPERF_PORT = 20000
+IPERF_UDP_PORT = 25000
+IPERF_RETRIES = 5
+
+IPERF_CMD_PREFIX = 'LD_LIBRARY_PATH=/usr/sfw/lib nohup /iperf'
+
 ssp_config = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
 
-ssh_options = '-2 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '\
+ssh_options = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '\
               '-o IdentitiesOnly=yes -o PreferredAuthentications=publickey '\
               '-o PasswordAuthentication=no -o GSSAPIAuthentication=no '\
               '-o ServerAliveInterval=30 -o ServerAliveCountMax=10 '\
-              '-o ConnectTimeout=5 -i ~/.ssh/ssp_solaris_rsa'
+              '-o ConnectTimeout=5 -2 -i ~/.ssh/ssp_solaris_rsa'
 
 def GetConfig(user_config):
   return configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
+
+def StartSSP(vm):
+  sed = "sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g'" % vm.secondary_nic.mac_address
+  cmd = 'sudo %s %s' % (sed, ssp_config)
+  stdout, _ = vm.RemoteCommand(cmd)
+
+  cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
+  stdout, _ = vm.RemoteCommand(cmd)
 
 
 @vm_util.Retry(log_errors=False, poll_interval=1)
 def WaitForSSPBootCompletion(vm):
 
-  ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s ' % (ssh_options,
-                                                      vm.secondary_nic.private_ip_address)
+  ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s '\
+               % (ssh_options,
+                  vm.secondary_nic.private_ip_address)
   cmd = ssh_prefix + 'hostname'
   stdout, _ = vm.RemoteCommand(cmd, retries=1, suppress_warning=True)
 
@@ -121,49 +132,31 @@ def Prepare(benchmark_spec):
         f'iperf benchmark requires exactly two machines, found {len(vms)}')
 
   for vm in vms:
-    sed = "sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g'" % vm.secondary_nic.mac_address
-    cmd = 'sudo %s %s' % (sed, ssp_config)
-    stdout, _ = vm.RemoteCommand(cmd)
-
-    cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
-    stdout, _ = vm.RemoteCommand(cmd)
+    StartSSP(vm)
 
   for vm in vms:
     WaitForSSPBootCompletion(benchmark_spec.vms[vms.index(vm)])
 
-    vm.Install('iperf_charon_ssp') # TODO: Move the below statement into this function of iperf_charon_ssp.py
-    vm.InstallPreprovisionedBenchmarkData(BENCHMARK_NAME, BENCHMARK_DATA,
-                                          vm_util.VM_TMP_DIR)
-    stdout, _ = vm.RemoteCommand('file %s' % (posixpath.join(vm_util.VM_TMP_DIR, 'iperf2.solaris')))
-    #assert stdout.strip() == '/tmp/pkb/iperf-2.0.5-sol10-sparc-local: pkg Datastream (SVR4)'
-
-    scp_cmd = 'scp %s -i ~/.ssh/ssp_solaris_rsa %s root@%s:/iperf2.solaris' % (ssh_options,
-                                                                      posixpath.join(vm_util.VM_TMP_DIR, 'iperf2.solaris'),
-                                                                      vm.secondary_nic.private_ip_address)
-    stdout, _ = vm.RemoteCommand(scp_cmd)
-
-    ssh_prefix = 'ssh %s root@%s' % (ssh_options, vm.secondary_nic.private_ip_address)
-
-    stdout, _ = vm.RemoteCommand("%s 'file /iperf2.solaris'" % ssh_prefix)
-    #assert stdout.strip() == '/iperf-2.0.5-sol10-sparc-local: pkg Datastream (SVR4)'
-    stdout, _ = vm.RemoteCommand("%s 'chmod +x /iperf2.solaris'" % ssh_prefix)
+    vm.Install(BENCHMARK_NAME)
 
     if vm_util.ShouldRunOnExternalIpAddress():
       if TCP in FLAGS.iperf_charon_ssp_benchmarks:
         vm.AllowPort(IPERF_PORT)
       if UDP in FLAGS.iperf_charon_ssp_benchmarks:
         vm.AllowPort(IPERF_UDP_PORT)
-    if TCP in FLAGS.iperf_charon_ssp_benchmarks:
-      stdout, _ = vm.RemoteCommand(f"{ssh_prefix} 'LD_LIBRARY_PATH=/usr/sfw/lib nohup /iperf2.solaris --server --port {IPERF_PORT}"
-                                   " > /dev/null 2>&1 & echo $!'")
 
-      # TODO(ssabhaya): store this in a better place once we have a better place
+    ssh_prefix = 'ssh %s root@%s' % (ssh_options, vm.secondary_nic.private_ip_address)
+
+    if TCP in FLAGS.iperf_charon_ssp_benchmarks:
+      stdout, _ = vm.RemoteCommand(f"{ssh_prefix} '{IPERF_CMD_PREFIX} "
+                                   f"--server --port {IPERF_PORT} "
+                                   f"> /dev/null 2>&1 & echo $!'")
       vm.iperf_tcp_server_pid = stdout.strip()
+
     if UDP in FLAGS.iperf_charon_ssp_benchmarks:
-      stdout, _ = vm.RemoteCommand(
-          f"{ssh_prefix} 'LD_LIBRARY_PATH=/usr/sfw/lib nohup /iperf2.solaris --server --udp --port {IPERF_UDP_PORT}"
-          " > /dev/null 2>&1 & echo $!'")
-      # TODO(ssabhaya): store this in a better place once we have a better place
+      stdout, _ = vm.RemoteCommand(f"{ssh_prefix} '{IPERF_CMD_PREFIX} "
+                                   f"--server --udp --port {IPERF_UDP_PORT} "
+                                   f"> /dev/null 2>&1 & echo $!'")
       vm.iperf_udp_server_pid = stdout.strip()
 
 
@@ -195,18 +188,18 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
       'ip_type': ip_type,
   }
 
-  sending_ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s' % (ssh_options,
-                                                                     sending_vm.secondary_nic.private_ip_address)
+  ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s'\
+               % (ssh_options, sending_vm.secondary_nic.private_ip_address)
 
   if protocol == TCP:
 
     iperf_cmd = (
-        f"{sending_ssh_prefix} 'LD_LIBRARY_PATH=/usr/sfw/lib nohup /iperf2.solaris --client {receiving_ip_address} --port "
+        f"{ssh_prefix} '{IPERF_CMD_PREFIX} --client {receiving_ip_address} --port "
         f"{IPERF_PORT} --format m --time {FLAGS.iperf_charon_ssp_runtime_in_seconds} "
         f"--parallel {thread_count}'")
 
-    # if FLAGS.iperf_charon_ssp_tcp_per_stream_bandwidth:
-    #   iperf_cmd += f' --bandwidth {FLAGS.iperf_charon_ssp_tcp_per_stream_bandwidth}M'
+    if FLAGS.iperf_charon_ssp_tcp_per_stream_bandwidth:
+      iperf_cmd += f' --bandwidth {FLAGS.iperf_charon_ssp_tcp_per_stream_bandwidth}M'
 
     # the additional time on top of the iperf runtime is to account for the
     # time it takes for the iperf process to start and exit
@@ -221,6 +214,7 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
     window_size = float(window_size_match.group('size'))
 
     buffer_size = 8192
+
     # buffer_size = float(
     #     re.search(r'Write buffer size: (?P<buffer_size>\d+\.\d+) \S+',
     #               stdout).group('buffer_size'))
@@ -287,12 +281,12 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
   elif protocol == UDP:
 
     iperf_cmd = (
-        f"{sending_ssh_prefix} 'LD_LIBRARY_PATH=/usr/sfw/lib nohup /iperf2.solaris --udp --client {receiving_ip_address} --port"
+        f"{ssh_prefix} '{IPERF_CMD_PREFIX} --udp --client {receiving_ip_address} --port"
         f" {IPERF_UDP_PORT} --format m --time {FLAGS.iperf_charon_ssp_runtime_in_seconds}"
         f" --parallel {thread_count}'")
 
-    # if FLAGS.iperf_charon_ssp_udp_per_stream_bandwidth:
-    #   iperf_cmd += f' --bandwidth {FLAGS.iperf_charon_ssp_udp_per_stream_bandwidth}M'
+    if FLAGS.iperf_charon_ssp_udp_per_stream_bandwidth:
+      iperf_cmd += f' --bandwidth {FLAGS.iperf_charon_ssp_udp_per_stream_bandwidth}M'
 
     # the additional time on top of the iperf runtime is to account for the
     # time it takes for the iperf process to start and exit
@@ -303,6 +297,7 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
         timeout=FLAGS.iperf_charon_ssp_runtime_in_seconds + timeout_buffer)
 
     buffer_size = 1470
+
     # match = re.search(
     #     r'UDP buffer size: (?P<buffer_size>\d+\.\d+)\s+(?P<buffer_unit>\w+)',
     #     stdout)
@@ -437,8 +432,8 @@ def Cleanup(benchmark_spec):
   """
   vms = benchmark_spec.vms
   for vm in vms:
-    ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s' % (ssh_options,
-                                                               vm.secondary_nic.private_ip_address)
+    ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s'\
+                 % (ssh_options, vm.secondary_nic.private_ip_address)
 
     if TCP in FLAGS.iperf_charon_ssp_benchmarks:
       vm.RemoteCommand(
