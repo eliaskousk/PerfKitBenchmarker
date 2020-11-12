@@ -432,7 +432,7 @@ def Cleanup(benchmark_spec):
   """
   vms = benchmark_spec.vms
   for vm in vms:
-    ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s'\
+    ssh_prefix = 'ssh %s root@%s'\
                  % (ssh_options, vm.secondary_nic.private_ip_address)
 
     if TCP in FLAGS.iperf_charon_ssp_benchmarks:
@@ -441,3 +441,10 @@ def Cleanup(benchmark_spec):
     if UDP in FLAGS.iperf_charon_ssp_benchmarks:
       vm.RemoteCommand(
           f"{ssh_prefix} 'kill -9 {vm.iperf_udp_server_pid}'", ignore_failure=True)
+
+  cmd = 'ssh %s root@%s poweroff &'\
+        % (ssh_options, vm.secondary_nic.private_ip_address)
+  stdout, _ = vm.RemoteCommand(cmd)
+
+  cmd = 'sleep 20'
+  stdout, _ = vm.RemoteCommand(cmd)
