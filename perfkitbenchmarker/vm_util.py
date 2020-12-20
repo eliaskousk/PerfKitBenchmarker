@@ -185,7 +185,7 @@ def GetPublicKeyPath():
   return PrependTempDir(PUBLIC_KEYFILE)
 
 
-def GetSshOptions(ssh_key_filename, connect_timeout=None):
+def GetSshOptions(ssh_key_filename, connect_timeout=None, reuse_connections=True):
   """Return common set of SSH and SCP options."""
   options = [
       '-2',
@@ -203,7 +203,7 @@ def GetSshOptions(ssh_key_filename, connect_timeout=None):
   ]
   if FLAGS.use_ipv6:
     options.append('-6')
-  if FLAGS.ssh_reuse_connections:
+  if FLAGS.ssh_reuse_connections and reuse_connections:
     control_path = (FLAGS.ssh_control_path or
                     os.path.join(temp_dir.GetSshConnectionsDir(), '%h'))
     options.extend([
@@ -214,6 +214,12 @@ def GetSshOptions(ssh_key_filename, connect_timeout=None):
   options.extend(FLAGS.ssh_options)
 
   return options
+
+def GetCharonSSPNestedSSHPrefix(ip):
+  prefix = ['ssh']
+  prefix.extend(GetSshOptions('~/.ssh/ssp_solaris_rsa', reuse_connections=False))
+  prefix.append('root@%s' % ip)
+  return prefix
 
 
 # TODO(skschneider): Remove at least RunParallelProcesses and RunParallelThreads

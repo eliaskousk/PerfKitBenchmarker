@@ -168,6 +168,22 @@ flags.DEFINE_integer(
 flags.DEFINE_boolean('gce_hpc_tools', False,
                      'Whether to apply the hpc-tools environment script.')
 
+flags.DEFINE_bool('charon_ssp', False,
+                  'Whether PKB should provision and boot Charon SSP emulator')
+
+CHARON_SSP_VDISK_SHA256SUM = {
+    'sol-10-u11-benchmark-vdisk.tar.zstd':
+      '05db5ffd956fd0296c26fc75e233a171072d4230380e616d2db02ab9b41ff1fd'
+}
+CHARON_SSP_VDISK_FALLBACK_URL = {
+    'sol-10-u11-benchmark-vdisk.tar.zstd':
+      'http://fileserver.stromasys.com/file.tar.zstd'
+}
+CHARON_SSP_VDISK_ARCHIVE = 'sol-10-u11-benchmark-vdisk.tar.zstd'
+CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/v1.0.0'
+CHARON_SSP_VDISK_INSTALL_FOLDER = 'Solaris.10.U11.Benchmark'
+CHARON_SSP_CONFIG = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
+
 RETRYABLE_SSH_RETCODE = 255
 
 
@@ -298,7 +314,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
         self._has_remote_command_script = True
 
   def RobustRemoteCommand(self, command, should_log=False, timeout=None,
-                          ignore_failure=False):
+                          ignore_failure=False, nested=False):
     """Runs a command on the VM in a more robust way than RemoteCommand.
 
     This is used for long-running commands that might experience network issues
@@ -325,6 +341,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
           output is always logged at the debug level.
       timeout: The timeout for the command in seconds.
       ignore_failure: Ignore any failure if set to true.
+      nested: Run the command inside VM or emulator.
 
     Returns:
       A tuple of stdout, stderr from running the command.
@@ -348,15 +365,24 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     status_file = file_base + '.status'
     exclusive_file = file_base + '.exclusive'
 
-    if not isinstance(command, str):
-      command = ' '.join(command)
+    final_command = []
+    if nested:
+      nested_ssh_prefix = vm_util.GetCharonSSPNestedSSHPrefix(
+        self.secondary_nic.private_ip_address)
+      final_command.extend(nested_ssh_prefix)
+      final_command.append("'%s'" % command)
+    else:
+      final_command = command
+
+    if not isinstance(final_command, str):
+      final_command = ' '.join(final_command)
 
     start_command = ['nohup', 'python', execute_path,
                      '--stdout', stdout_file,
                      '--stderr', stderr_file,
                      '--status', status_file,
                      '--exclusive', exclusive_file,
-                     '--command', pipes.quote(command)]  # pyformat: disable
+                     '--command', pipes.quote(final_command)]  # pyformat: disable
     if timeout:
       start_command.extend(['--timeout', str(timeout)])
 
@@ -443,6 +469,43 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     self.RecordAdditionalMetadata()
     self.BurnCpu()
     self.FillDisk()
+    if FLAGS.charon_ssp:
+      self.ProvisionCharonSSP()
+      self.BootCharonSSP()
+      self.WaitForCharonSSPBootCompletion()
+
+  def ProvisionCharonSSP(self):
+    logging.info('Provisioning Charon SSP on %s', self)
+
+    mount_point = self.scratch_disks[0].mount_point
+    vdisk_install_path = '%s/%s' % (mount_point, CHARON_SSP_VDISK_INSTALL_FOLDER)
+
+    self._InstallData(CHARON_SSP_VDISK_SHA256SUM,
+                      CHARON_SSP_VDISK_BUCKET_FOLDER,
+                      [CHARON_SSP_VDISK_ARCHIVE],
+                      vdisk_install_path,
+                      CHARON_SSP_VDISK_FALLBACK_URL)
+
+    self.Install('zstd')
+
+    cmd = 'tar --use-compress-program=zstd -xf %s/%s -C %s' \
+          % (vdisk_install_path, CHARON_SSP_VDISK_ARCHIVE, vdisk_install_path)
+    stdout, _ = self.RemoteCommand(cmd)
+
+    sed = "sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g'" % self.secondary_nic.mac_address
+    cmd = 'sudo %s %s' % (sed, CHARON_SSP_CONFIG)
+    stdout, _ = self.RemoteCommand(cmd)
+
+  def BootCharonSSP(self):
+    logging.info('Booting Charon SSP on %s', self)
+    cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
+    stdout, _ = self.RemoteCommand(cmd)
+
+  @vm_util.Retry(log_errors=False, poll_interval=1)
+  def WaitForCharonSSPBootCompletion(self):
+    logging.info('Waiting for Charon SSP boot on %s', self)
+    cmd = 'hostname'
+    stdout, _ = self.RemoteCommand(cmd, nested=True, retries=1, suppress_warning=True)
 
   def _CreateInstallDir(self):
     self.RemoteCommand(
@@ -835,15 +898,30 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     if FLAGS.log_dmesg:
       self.RemoteCommand('hostname && dmesg', should_log=True)
 
-  def RemoteCopy(self, file_path, remote_path='', copy_to=True):
-    self.RemoteHostCopy(file_path, remote_path, copy_to)
+  def RemoteCopy(self, file_path, remote_path='',
+                 nested_remote_path='', copy_to=True):
+    self.RemoteHostCopy(file_path, remote_path, nested_remote_path, copy_to)
 
-  def RemoteHostCopy(self, file_path, remote_path='', copy_to=True):
+    if nested_remote_path and copy_to:
+      nested_remote_location = 'root@%s:%s'% (
+        self.secondary_nic.private_ip_address, nested_remote_path)
+
+      scp_cmd = ['scp', '-P', str(self.ssh_port), '-pr']
+      scp_cmd.extend(vm_util.GetSshOptions(
+        '~/.ssh/ssp_solaris_rsa', reuse_connections=False))
+      if copy_to:
+        scp_cmd.extend([remote_path, nested_remote_location])
+
+      self.RemoteCommand(' '.join(scp_cmd))
+
+  def RemoteHostCopy(self, file_path, remote_path='', nested_remote_path='', copy_to=True):
     """Copies a file to or from the VM.
 
     Args:
       file_path: Local path to file.
       remote_path: Optional path of where to copy file on remote host.
+      nested_remote_path: Optional destination of the file on the REMOTE machine's
+        VM or emulator
       copy_to: True to copy to vm, False to copy from vm.
 
     Raises:
@@ -918,7 +996,8 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
                                       ignore_failure=False,
                                       login_shell=False,
                                       suppress_warning=False,
-                                      timeout=None):
+                                      timeout=None,
+                                      nested=False):
     """Runs a command on the VM.
 
     This is guaranteed to run on the host VM, whereas RemoteCommand might run
@@ -937,6 +1016,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
       suppress_warning: Suppress the result logging from IssueCommand when the
           return code is non-zero.
       timeout: The timeout for IssueCommand.
+      nested: Run the command inside VM or emulator.
 
     Returns:
       A tuple of stdout, stderr, return_code from running the command.
@@ -960,6 +1040,10 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
       if login_shell:
         ssh_cmd.extend(['-t', '-t', 'bash -l -c "%s"' % command])
         self._pseudo_tty_lock.acquire()
+      elif nested:
+        ssh_cmd.extend(vm_util.GetCharonSSPNestedSSHPrefix(
+          self.secondary_nic.private_ip_address))
+        ssh_cmd.append(command)
       else:
         ssh_cmd.append(command)
 
