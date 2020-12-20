@@ -1,0 +1,49 @@
+; Copyright 2014 PerfKitBenchmarker Authors. All rights reserved.
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;   http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
+[global]
+filename=fio_test_file
+ioengine=solarisaio
+iodepth=4
+
+[sequential_write]
+rw=write
+blocksize=512k
+size=4g
+stonewall
+
+[sequential_read]
+rw=read
+blocksize=512k
+size=4g
+stonewall
+
+[random_write]
+rw=randwrite
+blocksize=4k
+size=512m
+stonewall
+
+[random_read]
+rw=randread
+blocksize=4k
+size=512m
+stonewall
+
+[random_read_parallel]
+rw=randread
+blocksize=4k
+iodepth=64
+size=512m
+stonewall
