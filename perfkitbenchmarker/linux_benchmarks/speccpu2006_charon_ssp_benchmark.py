@@ -50,45 +50,19 @@ flags.DEFINE_enum('spec_cpu_2006_charon_ssp_runtime_metric', 'speed', ['speed', 
                   'throughput-based metric.')
 
 BENCHMARK_NAME = 'speccpu2006_charon_ssp'
+
 BENCHMARK_CONFIG = """
 speccpu2006_charon_ssp:
   description: Runs SPEC CPU2006 on Charon SSP SPARC emulator
   vm_groups:
     default:
       vm_spec: *default_single_core
+      disk_spec: *default_50_gb
 """
-#
-#      disk_spec: *default_50_gb
-#"""
 
-ssp_config = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
-
-ssh_options = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '\
-              '-o IdentitiesOnly=yes -o PreferredAuthentications=publickey '\
-              '-o PasswordAuthentication=no -o GSSAPIAuthentication=no '\
-              '-o ServerAliveInterval=30 -o ServerAliveCountMax=10 '\
-              '-o ConnectTimeout=5 -2 -i ~/.ssh/ssp_solaris_rsa'
 
 def GetConfig(user_config):
   return configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
-
-
-def StartSSP(vm):
-  sed = "sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g'" % vm.secondary_nic.mac_address
-  cmd = 'sudo %s %s' % (sed, ssp_config)
-  stdout, _ = vm.RemoteCommand(cmd)
-
-  cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
-  stdout, _ = vm.RemoteCommand(cmd)
-
-
-@vm_util.Retry(log_errors=False, poll_interval=1)
-def WaitForSSPBootCompletion(vm):
-
-  ssh_prefix = 'ssh %s root@%s '\
-               % (ssh_options, vm.secondary_nic.private_ip_address)
-  cmd = ssh_prefix + 'hostname'
-  stdout, _ = vm.RemoteCommand(cmd, retries=1, suppress_warning=True)
 
 
 def Prepare(benchmark_spec):
@@ -106,9 +80,6 @@ def Prepare(benchmark_spec):
   config = speccpu2006_charon_ssp.GetSpecInstallConfig(
     speccpu2006_charon_ssp.SOLARIS_VDISK_BENCHMARK_INSTALL_DIR)
   setattr(vm, speccpu.VM_STATE_ATTR, config)
-
-  StartSSP(vm)
-  WaitForSSPBootCompletion(vm)
 
 
 def Run(benchmark_spec):
@@ -129,11 +100,8 @@ def Run(benchmark_spec):
   else:
     version_specific_parameters.append(' --rate=%s ' % vm.NumCpusForBenchmark())
 
-  ssh_prefix = 'ssh %s root@%s'\
-               % (ssh_options, vm.secondary_nic.private_ip_address)
-
-  speccpu.RunInCharonSSP(vm, ssh_prefix, 'runspec',
-                         FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset,
+  speccpu.RunInCharonSSP(vm, vm.secondary_nic.private_ip_address,
+                         'runspec', FLAGS.spec_cpu_2006_charon_ssp_benchmark_subset,
                          version_specific_parameters)
 
   log_files = []
@@ -160,9 +128,8 @@ def Cleanup(benchmark_spec):
   """
   vm = benchmark_spec.vms[0]
 
-  cmd = 'ssh %s root@%s poweroff &'\
-        % (ssh_options, vm.secondary_nic.private_ip_address)
-  stdout, _ = vm.RemoteCommand(cmd)
+  cmd = 'poweroff &'
+  stdout, _ = vm.RemoteCommand(cmd, nested=True)
 
   cmd = 'sleep 20'
   stdout, _ = vm.RemoteCommand(cmd)
