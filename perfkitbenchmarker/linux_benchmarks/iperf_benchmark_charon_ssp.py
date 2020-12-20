@@ -69,54 +69,28 @@ flags.register_validator(
 FLAGS = flags.FLAGS
 
 BENCHMARK_NAME = 'iperf_charon_ssp'
+
 BENCHMARK_CONFIG = """
 iperf_charon_ssp:
   description: Run iperf on Charon SSP SPARC emulator
   vm_groups:
     vm_1:
       vm_spec: *default_single_core
+      disk_spec: *default_50_gb
     vm_2:
       vm_spec: *default_single_core
+      disk_spec: *default_50_gb
 """
-
-BENCHMARK_DATA = {
-    'iperf2.solaris':
-        '59b3d0a619b4ddec11813af6e24e674e6dd77ddc4b09cdac7c71461b4f127af6'}
 
 IPERF_PORT = 20000
 IPERF_UDP_PORT = 25000
 IPERF_RETRIES = 5
 
-IPERF_CMD_PREFIX = 'LD_LIBRARY_PATH=/usr/sfw/lib nohup /iperf'
+IPERF_CMD_PREFIX = '/export/home/iperf2/bin/iperf'
 
-ssp_config = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
-
-ssh_options = '-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no '\
-              '-o IdentitiesOnly=yes -o PreferredAuthentications=publickey '\
-              '-o PasswordAuthentication=no -o GSSAPIAuthentication=no '\
-              '-o ServerAliveInterval=30 -o ServerAliveCountMax=10 '\
-              '-o ConnectTimeout=5 -2 -i ~/.ssh/ssp_solaris_rsa'
 
 def GetConfig(user_config):
   return configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
-
-def StartSSP(vm):
-  sed = "sed -i 's/mac = 0a:c6:4a:7d:f0:6c/mac = %s/g'" % vm.secondary_nic.mac_address
-  cmd = 'sudo %s %s' % (sed, ssp_config)
-  stdout, _ = vm.RemoteCommand(cmd)
-
-  cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
-  stdout, _ = vm.RemoteCommand(cmd)
-
-
-@vm_util.Retry(log_errors=False, poll_interval=1)
-def WaitForSSPBootCompletion(vm):
-
-  ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s '\
-               % (ssh_options,
-                  vm.secondary_nic.private_ip_address)
-  cmd = ssh_prefix + 'hostname'
-  stdout, _ = vm.RemoteCommand(cmd, retries=1, suppress_warning=True)
 
 
 def Prepare(benchmark_spec):
@@ -132,11 +106,6 @@ def Prepare(benchmark_spec):
         f'iperf benchmark requires exactly two machines, found {len(vms)}')
 
   for vm in vms:
-    StartSSP(vm)
-
-  for vm in vms:
-    WaitForSSPBootCompletion(benchmark_spec.vms[vms.index(vm)])
-
     vm.Install(BENCHMARK_NAME)
 
     if vm_util.ShouldRunOnExternalIpAddress():
@@ -145,18 +114,18 @@ def Prepare(benchmark_spec):
       if UDP in FLAGS.iperf_charon_ssp_benchmarks:
         vm.AllowPort(IPERF_UDP_PORT)
 
-    ssh_prefix = 'ssh %s root@%s' % (ssh_options, vm.secondary_nic.private_ip_address)
-
     if TCP in FLAGS.iperf_charon_ssp_benchmarks:
-      stdout, _ = vm.RemoteCommand(f"{ssh_prefix} '{IPERF_CMD_PREFIX} "
+      stdout, _ = vm.RemoteCommand(f"'{IPERF_CMD_PREFIX} "
                                    f"--server --port {IPERF_PORT} "
-                                   f"> /dev/null 2>&1 & echo $!'")
+                                   f"> /dev/null 2>&1 & echo $!'",
+                                   nested=True)
       vm.iperf_tcp_server_pid = stdout.strip()
 
     if UDP in FLAGS.iperf_charon_ssp_benchmarks:
-      stdout, _ = vm.RemoteCommand(f"{ssh_prefix} '{IPERF_CMD_PREFIX} "
+      stdout, _ = vm.RemoteCommand(f"'{IPERF_CMD_PREFIX} "
                                    f"--server --udp --port {IPERF_UDP_PORT} "
-                                   f"> /dev/null 2>&1 & echo $!'")
+                                   f"> /dev/null 2>&1 & echo $!'",
+                                   nested=True)
       vm.iperf_udp_server_pid = stdout.strip()
 
 
@@ -188,13 +157,10 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
       'ip_type': ip_type,
   }
 
-  ssh_prefix = 'ssh %s -i ~/.ssh/ssp_solaris_rsa root@%s'\
-               % (ssh_options, sending_vm.secondary_nic.private_ip_address)
-
   if protocol == TCP:
 
     iperf_cmd = (
-        f"{ssh_prefix} '{IPERF_CMD_PREFIX} --client {receiving_ip_address} --port "
+        f"'{IPERF_CMD_PREFIX} --client {receiving_ip_address} --port "
         f"{IPERF_PORT} --format m --time {FLAGS.iperf_charon_ssp_runtime_in_seconds} "
         f"--parallel {thread_count}'")
 
@@ -205,8 +171,7 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
     # time it takes for the iperf process to start and exit
     timeout_buffer = FLAGS.iperf_charon_ssp_timeout or 30 + thread_count
     stdout, _ = sending_vm.RemoteCommand(
-        iperf_cmd,
-        should_log=True,
+        iperf_cmd, nested=True, should_log=True,
         timeout=FLAGS.iperf_charon_ssp_runtime_in_seconds + timeout_buffer)
 
     window_size_match = re.search(
@@ -281,7 +246,7 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
   elif protocol == UDP:
 
     iperf_cmd = (
-        f"{ssh_prefix} '{IPERF_CMD_PREFIX} --udp --client {receiving_ip_address} --port"
+        f"'{IPERF_CMD_PREFIX} --udp --client {receiving_ip_address} --port"
         f" {IPERF_UDP_PORT} --format m --time {FLAGS.iperf_charon_ssp_runtime_in_seconds}"
         f" --parallel {thread_count}'")
 
@@ -292,8 +257,7 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
     # time it takes for the iperf process to start and exit
     timeout_buffer = FLAGS.iperf_charon_ssp_timeout or 30 + thread_count
     stdout, _ = sending_vm.RemoteCommand(
-        iperf_cmd,
-        should_log=True,
+        iperf_cmd, nested=True, should_log=True,
         timeout=FLAGS.iperf_charon_ssp_runtime_in_seconds + timeout_buffer)
 
     buffer_size = 1470
@@ -432,19 +396,15 @@ def Cleanup(benchmark_spec):
   """
   vms = benchmark_spec.vms
   for vm in vms:
-    ssh_prefix = 'ssh %s root@%s'\
-                 % (ssh_options, vm.secondary_nic.private_ip_address)
-
     if TCP in FLAGS.iperf_charon_ssp_benchmarks:
       vm.RemoteCommand(
-          f"{ssh_prefix} 'kill -9 {vm.iperf_tcp_server_pid}'", ignore_failure=True)
+          f"'kill -9 {vm.iperf_tcp_server_pid}'", nested=True, ignore_failure=True)
     if UDP in FLAGS.iperf_charon_ssp_benchmarks:
       vm.RemoteCommand(
-          f"{ssh_prefix} 'kill -9 {vm.iperf_udp_server_pid}'", ignore_failure=True)
+          f"'kill -9 {vm.iperf_udp_server_pid}'", nested=True, ignore_failure=True)
 
-  cmd = 'ssh %s root@%s poweroff &'\
-        % (ssh_options, vm.secondary_nic.private_ip_address)
-  stdout, _ = vm.RemoteCommand(cmd)
+    cmd = 'poweroff &'
+    stdout, _ = vm.RemoteCommand(cmd, nested=True)
 
-  cmd = 'sleep 20'
-  stdout, _ = vm.RemoteCommand(cmd)
+    cmd = 'sleep 20'
+    stdout, _ = vm.RemoteCommand(cmd)
