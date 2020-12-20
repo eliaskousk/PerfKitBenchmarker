@@ -437,12 +437,14 @@ class BaseOsMixin(six.with_metaclass(abc.ABCMeta, object)):
     pass
 
   @abc.abstractmethod
-  def RemoteCopy(self, file_path, remote_path='', copy_to=True):
+  def RemoteCopy(self, file_path, remote_path='', nested_remote_path='', copy_to=True):
     """Copies a file to or from the VM.
 
     Args:
       file_path: Local path to file.
       remote_path: Optional path of where to copy file on remote host.
+      nested_remote_path: Optional destination of the file on the REMOTE machine's
+        VM or emulator
       copy_to: True to copy to vm, False to copy from vm.
 
     Raises:
@@ -521,15 +523,17 @@ class BaseOsMixin(six.with_metaclass(abc.ABCMeta, object)):
     """Logs OS-specific debug info. Must be overridden on an OS mixin."""
     pass
 
-  def PushFile(self, source_path, remote_path=''):
+  def PushFile(self, source_path, remote_path='', nested_remote_path=''):
     """Copies a file or a directory to the VM.
 
     Args:
       source_path: The location of the file or directory on the LOCAL machine.
       remote_path: The destination of the file on the REMOTE machine, default
           is the home directory.
+      nested_remote_path: The destination of the file on the REMOTE machine's
+          VM or emulator
     """
-    self.RemoteCopy(source_path, remote_path)
+    self.RemoteCopy(source_path, remote_path, nested_remote_path)
 
   def PullFile(self, local_path, remote_path):
     """Copies a file or a directory from the VM to the local machine.
