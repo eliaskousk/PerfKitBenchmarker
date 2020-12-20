@@ -1,4 +1,4 @@
-speccpu2006_charon_ssp:
+fio_charon_ssp:
   vm_groups:
     default:
       cloud: AWS
