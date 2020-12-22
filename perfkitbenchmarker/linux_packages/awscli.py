@@ -19,8 +19,16 @@ from perfkitbenchmarker import errors
 
 def Install(vm):
   """Installs the awscli package on the VM."""
+
+  # For AWS CLI v1
   vm.InstallPackages('python3-pip')
   vm.RemoteCommand('sudo pip3 install awscli')
+
+  # For AWS CLI v2
+  # vm.InstallPackages('curl unzip')
+  # vm.RemoteCommand("curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"awscliv2.zip\"")
+  # vm.RemoteCommand('unzip awscliv2.zip')
+  # vm.RemoteCommand('sudo ./aws/install')
 
 
 def YumInstall(vm):
@@ -34,4 +42,8 @@ def YumInstall(vm):
 
 
 def Uninstall(vm):
+  # For AWS CLI v1
   vm.RemoteCommand('/usr/bin/yes | sudo pip3 uninstall awscli')
+
+  # For AWS CLI v2
+  # vm.RemoteCommand('rm -f awscliv2.zip && rm -rf aws/')
