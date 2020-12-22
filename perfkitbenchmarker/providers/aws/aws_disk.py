@@ -38,7 +38,9 @@ VOLUME_KNOWN_STATUSES = VOLUME_EXISTS_STATUSES | VOLUME_DELETED_STATUSES
 
 STANDARD = 'standard'
 GP2 = 'gp2'
+GP3 = 'gp3'
 IO1 = 'io1'
+IO2 = 'io2'
 ST1 = 'st1'
 SC1 = 'sc1'
 
@@ -57,9 +59,17 @@ DISK_METADATA = {
         disk.MEDIA: disk.SSD,
         disk.REPLICATION: disk.ZONE,
     },
+    GP3: {
+      disk.MEDIA: disk.SSD,
+      disk.REPLICATION: disk.ZONE,
+    },
     IO1: {
         disk.MEDIA: disk.SSD,
         disk.REPLICATION: disk.ZONE,
+    },
+    IO2: {
+      disk.MEDIA: disk.SSD,
+      disk.REPLICATION: disk.ZONE,
     },
     ST1: {
         disk.MEDIA: disk.HDD,
@@ -230,6 +240,7 @@ class AwsDiskSpec(disk.BaseDiskSpec):
 
   Attributes:
     iops: None or int. IOPS for Provisioned IOPS (SSD) volumes in AWS.
+    throughput: None or int. Throughput for Provisioned Throughput (SSD) volumes in AWS.
   """
 
   CLOUD = aws.CLOUD
@@ -249,6 +260,8 @@ class AwsDiskSpec(disk.BaseDiskSpec):
     super(AwsDiskSpec, cls)._ApplyFlags(config_values, flag_values)
     if flag_values['aws_provisioned_iops'].present:
       config_values['iops'] = flag_values.aws_provisioned_iops
+    if flag_values['aws_provisioned_throughput'].present:
+      config_values['throughput'] = flag_values.aws_provisioned_iops
 
   @classmethod
   def _GetOptionDecoderConstructions(cls):
@@ -262,6 +275,8 @@ class AwsDiskSpec(disk.BaseDiskSpec):
     result = super(AwsDiskSpec, cls)._GetOptionDecoderConstructions()
     result.update({'iops': (option_decoders.IntDecoder, {'default': None,
                                                          'none_ok': True})})
+    result.update({'throughput': (option_decoders.IntDecoder, {'default': None,
+                                                               'none_ok': True})})
     return result
 
 
@@ -274,6 +289,7 @@ class AwsDisk(disk.BaseDisk):
   def __init__(self, disk_spec, zone, machine_type):
     super(AwsDisk, self).__init__(disk_spec)
     self.iops = disk_spec.iops
+    self.throughput = disk_spec.throughput
     self.id = None
     self.zone = zone
     self.region = util.GetRegionFromZone(zone)
@@ -288,6 +304,9 @@ class AwsDisk(disk.BaseDisk):
                             else LOCAL_SSD_METADATA))
     if self.iops:
       self.metadata['iops'] = self.iops
+    if self.throughput:
+      self.metadata['throughput'] = self.throughput
+
 
   def AssignDeviceLetter(self, letter_suggestion, nvme_boot_drive_index):
     if LocalDriveIsNvme(self.machine_type) and \
@@ -313,8 +332,10 @@ class AwsDisk(disk.BaseDisk):
         '--volume-type=%s' % self.disk_type]
     if not util.IsRegion(self.zone):
       create_cmd.append('--availability-zone=%s' % self.zone)
-    if self.disk_type == IO1:
+    if self.disk_type == IO1 or self.disk_type == IO2 or self.disk_type == GP3:
       create_cmd.append('--iops=%s' % self.iops)
+    if self.disk_type == GP3:
+      create_cmd.append('--throughput=%s' % self.throughput)
     stdout, _, _ = vm_util.IssueCommand(create_cmd)
     response = json.loads(stdout)
     self.id = response['VolumeId']
