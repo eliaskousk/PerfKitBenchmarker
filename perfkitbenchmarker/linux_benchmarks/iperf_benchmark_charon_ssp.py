@@ -160,7 +160,7 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
   if protocol == TCP:
 
     iperf_cmd = (
-        f"'{IPERF_CMD_PREFIX} --client {receiving_ip_address} --port "
+        f"'{IPERF_CMD_PREFIX} --enhanced --client {receiving_ip_address} --port "
         f"{IPERF_PORT} --format m --time {FLAGS.iperf_charon_ssp_runtime_in_seconds} "
         f"--parallel {thread_count}'")
 
@@ -246,7 +246,7 @@ def _RunIperf(sending_vm, receiving_vm, receiving_ip_address, thread_count,
   elif protocol == UDP:
 
     iperf_cmd = (
-        f"'{IPERF_CMD_PREFIX} --udp --client {receiving_ip_address} --port"
+        f"'{IPERF_CMD_PREFIX} --enhanced --udp --client {receiving_ip_address} --port"
         f" {IPERF_UDP_PORT} --format m --time {FLAGS.iperf_charon_ssp_runtime_in_seconds}"
         f" --parallel {thread_count}'")
 
