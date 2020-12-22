@@ -1,4 +1,4 @@
-iperf_charon_ssp:
+scp_charon_ssp:
   vm_groups:
     vm_1:
       cloud: AWS

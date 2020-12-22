@@ -10,6 +10,6 @@ speccpu2006_charon_ssp:
           zone: eu-central-1
       disk_spec:
         AWS:
-          disk_type: local # Instance storage - fixed size on EC2
-          # disk_size: 50
+          disk_type: local # Prefer instance storage (fixed size on EC2)
+          disk_size: 60 # Used only when type is gp3/gp2/io2/io1/standard (non-local EBS volume)
           mount_point: /scratch
