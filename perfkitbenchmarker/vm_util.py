@@ -215,6 +215,23 @@ def GetSshOptions(ssh_key_filename, connect_timeout=None, reuse_connections=True
 
   return options
 
+
+def GetCharonSSPNestedSshOptions(ssh_key_filename, connect_timeout=None):
+  """Return common set of SSH and SCP options."""
+  options = [
+      '-o', 'UserKnownHostsFile=/dev/null',
+      '-o', 'StrictHostKeyChecking=no',
+      '-o', 'PreferredAuthentications=publickey',
+      '-o', 'PasswordAuthentication=no',
+      '-o', 'ConnectTimeout=%d' % (
+          connect_timeout or FLAGS.ssh_connect_timeout),
+      '-o', 'GSSAPIAuthentication=no',
+      '-i', ssh_key_filename
+  ]
+
+  return options
+
+
 def GetCharonSSPNestedSSHPrefix(ip):
   prefix = ['ssh']
   prefix.extend(GetSshOptions('~/.ssh/ssp_solaris_rsa', reuse_connections=False))
