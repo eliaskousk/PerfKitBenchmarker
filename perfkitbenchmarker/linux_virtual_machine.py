@@ -494,12 +494,12 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     stdout, _ = self.RemoteCommand(cmd)
 
     # Update Vdisk Path
-    sed = "sed -i 's#lun_0 = .+#lun_0 = %s/%s#g'" % (vdisk_install_path, CHARON_SSP_VDISK_FILENAME)
+    sed = "sed -i -E 's#^lun_0 = .+#lun_0 = %s/%s#g'" % (vdisk_install_path, CHARON_SSP_VDISK_FILENAME)
     cmd = 'sudo %s %s' % (sed, CHARON_SSP_CONFIG)
     stdout, _ = self.RemoteCommand(cmd)
 
     # Update MAC Address
-    sed = "sed -i 's/^mac = 0a:c6:4a:7d:f0:6c/mac = %s/g'" % self.secondary_nic.mac_address
+    sed = "sed -i -E 's/^mac = .+/mac = %s/g'" % self.secondary_nic.mac_address
     cmd = 'sudo %s %s' % (sed, CHARON_SSP_CONFIG)
     stdout, _ = self.RemoteCommand(cmd)
 
