@@ -182,6 +182,7 @@ CHARON_SSP_VDISK_FALLBACK_URL = {
 CHARON_SSP_VDISK_ARCHIVE = 'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd'
 CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/10U11/v1.0.0'
 CHARON_SSP_VDISK_INSTALL_FOLDER = 'charon/vdisk'
+CHARON_SSP_VDISK_FILENAME = 'sol-10-u11-benchmark.vdisk'
 CHARON_SSP_CONFIG = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
 
 RETRYABLE_SSH_RETCODE = 255
@@ -493,7 +494,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     stdout, _ = self.RemoteCommand(cmd)
 
     # Update Vdisk Path
-    sed = "sed -i 's#^lun_0 = .+\.vdisk#lun_0 = %s#g'" % vdisk_install_path
+    sed = "sed -i 's#lun_0 = .+#lun_0 = %s/%s#g'" % (vdisk_install_path, CHARON_SSP_VDISK_FILENAME)
     cmd = 'sudo %s %s' % (sed, CHARON_SSP_CONFIG)
     stdout, _ = self.RemoteCommand(cmd)
 
