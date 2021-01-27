@@ -493,7 +493,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     stdout, _ = self.RemoteCommand(cmd)
 
     # Update Vdisk Path
-    sed = "sed -i 's/^lun_0 = .+\.vdisk/lun_0 = %s/g'" % vdisk_install_path
+    sed = "sed -i 's#^lun_0 = .+\.vdisk#lun_0 = %s#g'" % vdisk_install_path
     cmd = 'sudo %s %s' % (sed, CHARON_SSP_CONFIG)
     stdout, _ = self.RemoteCommand(cmd)
 
