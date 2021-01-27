@@ -172,16 +172,16 @@ flags.DEFINE_bool('charon_ssp', False,
                   'Whether PKB should provision and boot Charon SSP emulator')
 
 CHARON_SSP_VDISK_SHA256SUM = {
-    'sol-10-u11-benchmark-vdisk.tar.zstd':
+    'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd':
       '05db5ffd956fd0296c26fc75e233a171072d4230380e616d2db02ab9b41ff1fd'
 }
 CHARON_SSP_VDISK_FALLBACK_URL = {
-    'sol-10-u11-benchmark-vdisk.tar.zstd':
+    'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd':
       'http://fileserver.stromasys.com/file.tar.zstd'
 }
-CHARON_SSP_VDISK_ARCHIVE = 'sol-10-u11-benchmark-vdisk.tar.zstd'
-CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/v1.0.0'
-CHARON_SSP_VDISK_INSTALL_FOLDER = 'Solaris.10.U11.Benchmark'
+CHARON_SSP_VDISK_ARCHIVE = 'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd'
+CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/10U11/v1.0.0'
+CHARON_SSP_VDISK_INSTALL_FOLDER = 'charon/vdisk'
 CHARON_SSP_CONFIG = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
 
 RETRYABLE_SSH_RETCODE = 255
