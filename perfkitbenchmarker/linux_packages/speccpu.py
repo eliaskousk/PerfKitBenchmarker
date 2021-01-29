@@ -91,10 +91,12 @@ flags.DEFINE_boolean(
     'and PKB samples will be marked with a metadata value of partial=true. If '
     'unset, SPECint(R)_rate_base20** and SPECfp(R)_rate_base20** are listed '
     'in the metadata under missing_results.')
+flags.DEFINE_integer('runspec_timeout_sec', None,
+                     'Timeout for runspec commands in seconds.')
 flags.DEFINE_enum(
     'spec_runmode', BASE_MODE,
     [BASE_MODE, PEAK_MODE, ALL_MODE],
-    'Run mode to use. Defaults to base. ')
+    'Run mode to use. Defaults to base.')
 
 
 VM_STATE_ATTR = 'speccpu_vm_state'
@@ -596,7 +598,7 @@ def ParseOutput(vm, log_files, is_partial_results, runspec_metric,
 
   return results
 
-def ParseOutputFromCharonSSP(vm, ssh_prefix, log_files, is_partial_results, runspec_metric,
+def ParseOutputFromCharonSSP(vm, log_files, is_partial_results, runspec_metric,
                 results_directory=None):
   """Retrieves the SPEC CPU output from the VM and parses it.
 
@@ -617,8 +619,7 @@ def ParseOutputFromCharonSSP(vm, ssh_prefix, log_files, is_partial_results, runs
 
   for log in log_files:
     results_dir = results_directory or '%s/result' % speccpu_vm_state.spec_dir
-    stdout, _ = vm.RemoteCommand(
-        "%s 'cat %s/%s'" % (ssh_prefix, results_dir, log), should_log=True)
+    stdout, _ = vm.RemoteCommand('cat %s/%s' % (results_dir, log), should_log=True)
     results.extend(_ExtractScore(
         stdout, vm, FLAGS.runspec_keep_partial_results or is_partial_results,
         runspec_metric))
@@ -660,12 +661,11 @@ def Run(vm, cmd, benchmark_subset, version_specific_parameters=None):
   return vm.RobustRemoteCommand(cmd)
 
 
-def RunInCharonSSP(vm, ssh_prefix, cmd, benchmark_subset, version_specific_parameters=None):
+def RunInCharonSSP(vm, cmd, benchmark_subset, version_specific_parameters=None):
   """Runs SPEC CPU on the target vm.
 
   Args:
     vm: Vm. The vm on which speccpu will run.
-    ssh_prefix: Run the command with ssh.
     cmd: command to issue.
     benchmark_subset: List. Subset of the benchmark to run.
     version_specific_parameters: List. List of parameters for specific versions.
@@ -699,7 +699,8 @@ def RunInCharonSSP(vm, ssh_prefix, cmd, benchmark_subset, version_specific_param
       runspec_cmd,
       'ls -al {0}/result/'.format(speccpu_vm_state.spec_dir)))
 
-  return vm.RobustRemoteCommand("%s '%s'" % (ssh_prefix, cmd))
+  return vm.RobustRemoteCommand(
+      cmd, nested=True, should_log=True, timeout=FLAGS.runspec_timeout_sec)
 
 
 def Uninstall(vm):
