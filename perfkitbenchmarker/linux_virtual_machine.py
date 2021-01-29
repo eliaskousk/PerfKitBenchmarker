@@ -28,6 +28,7 @@ for you.
 
 import abc
 import collections
+import json
 import logging
 import os
 import pipes
@@ -170,6 +171,10 @@ flags.DEFINE_boolean('gce_hpc_tools', False,
 
 flags.DEFINE_bool('charon_ssp', False,
                   'Whether PKB should provision and boot Charon SSP emulator')
+
+flags.DEFINE_string(
+    'charon_ssp_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep"}',
+    'Charon SSP configuration')
 
 CHARON_SSP_VDISK_SHA256SUM = {
     'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd':
@@ -478,6 +483,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
   def ProvisionCharonSSP(self):
     logging.info('Provisioning Charon SSP on %s', self)
 
+    # Download and extract vdisk archive
     mount_point = self.scratch_disks[0].mount_point
     vdisk_install_path = '%s/%s' % (mount_point, CHARON_SSP_VDISK_INSTALL_FOLDER)
 
@@ -493,14 +499,25 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
           % (vdisk_install_path, CHARON_SSP_VDISK_ARCHIVE, vdisk_install_path)
     stdout, _ = self.RemoteCommand(cmd)
 
-    # Update Vdisk Path
-    sed = "sed -i -E 's#^lun_0 = .+#lun_0 = %s/%s#g'" % (vdisk_install_path, CHARON_SSP_VDISK_FILENAME)
-    cmd = 'sudo %s %s' % (sed, CHARON_SSP_CONFIG)
-    stdout, _ = self.RemoteCommand(cmd)
+    # Update Charon SSP config file
 
-    # Update MAC Address
-    sed = "sed -i -E 's/^mac = .+/mac = %s/g'" % self.secondary_nic.mac_address
-    cmd = 'sudo %s %s' % (sed, CHARON_SSP_CONFIG)
+    default_config = { "machine": "SUN-4U",
+                       "vcpus": 2,
+                       "memory" : 8192,
+                       "ht": "on",
+                       "idle": "sleep" }
+
+    config = json.loads(FLAGS.charon_ssp_config)
+    sed = ''
+    for key, value in default_config.items():
+      if key not in config:
+        config[key] = value
+      sed += "-e 's/^" + key + " = .+/" + key + " = %s/g' " % config[key]
+
+    sed += "-e 's#^lun_0 = .+#lun_0 = %s/%s#g' " % (vdisk_install_path, CHARON_SSP_VDISK_FILENAME)
+    sed += "-e 's/^mac = .+/mac = %s/g'" % self.secondary_nic.mac_address
+
+    cmd = 'sudo sed -i -E %s %s' % (sed, CHARON_SSP_CONFIG)
     stdout, _ = self.RemoteCommand(cmd)
 
   def BootCharonSSP(self):
