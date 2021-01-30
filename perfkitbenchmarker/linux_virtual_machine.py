@@ -169,12 +169,12 @@ flags.DEFINE_integer(
 flags.DEFINE_boolean('gce_hpc_tools', False,
                      'Whether to apply the hpc-tools environment script.')
 
-flags.DEFINE_bool('charon_ssp', False,
-                  'Whether PKB should provision and boot Charon SSP emulator')
+flags.DEFINE_string('charon_name', 'charon_ssp',
+                  'PKB should provision and boot this Charon emulator')
 
 flags.DEFINE_string(
-    'charon_ssp_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep"}',
-    'Charon SSP configuration')
+    'charon_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep"}',
+    'Charon configuration')
 
 CHARON_SSP_VDISK_SHA256SUM = {
     'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd':
@@ -475,7 +475,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     self.RecordAdditionalMetadata()
     self.BurnCpu()
     self.FillDisk()
-    if FLAGS.charon_ssp:
+    if FLAGS.charon_name == 'charon_ssp':
       self.ProvisionCharonSSP()
       self.BootCharonSSP()
       self.WaitForCharonSSPBootCompletion()
@@ -507,7 +507,7 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
                        "ht": "on",
                        "idle": "sleep" }
 
-    config = json.loads(FLAGS.charon_ssp_config)
+    config = json.loads(FLAGS.charon_config)
     sed = ''
     for key, value in default_config.items():
       if key not in config:
