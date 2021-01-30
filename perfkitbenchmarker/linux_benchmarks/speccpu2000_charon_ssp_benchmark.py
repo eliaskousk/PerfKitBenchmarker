@@ -42,7 +42,7 @@ _SPECFP_BENCHMARKS = frozenset([
 _SPECCPU_SUBSETS = frozenset(['int', 'fp', 'all'])
 
 flags.DEFINE_enum(
-    'speccpu2000_charon_ssp_benchmark_subset', 'mcf',
+    'speccpu2000_charon_ssp_benchmark_subset', 'int',
     _SPECFP_BENCHMARKS | _SPECINT_BENCHMARKS | _SPECCPU_SUBSETS,
     'Used by the PKB speccpu2000 benchmark. Specifies a subset of SPEC CPU2000 '
     'benchmarks to run.')
@@ -108,9 +108,9 @@ def Run(benchmark_spec):
   # parameters. SPEC CPU2000 will generate different logs for build, test
   # run, training run and ref run.
   if FLAGS.speccpu2000_charon_ssp_benchmark_subset in _SPECINT_BENCHMARKS | set(['int', 'all']):
-    log_files.append('CINT2000.001.ref.asc')
+    log_files.append('CINT2000.001.asc')
   if FLAGS.speccpu2000_charon_ssp_benchmark_subset in _SPECFP_BENCHMARKS | set(['fp', 'all']):
-    log_files.append('CFP2000.001.ref.asc')
+    log_files.append('CFP2000.001.asc')
   partial_results = FLAGS.speccpu2000_charon_ssp_benchmark_subset not in _SPECCPU_SUBSETS
 
   return speccpu.ParseOutputFromCharonSSP(vm, log_files, partial_results,

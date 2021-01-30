@@ -32,7 +32,7 @@ _CPU2006_ISO = 'cpu2006-1.2.iso'  # Unused for now
 _CPU2006_TAR = 'cpu2006v1.2.tgz'  # Unused for now
 _CPU2006_TAR_REQUIRED_MEMBERS = 'cpu2006', 'cpu2006/bin/runspec'  # Unused for now
 
-_LOG_FORMAT = r'Est. (SPEC.*_base2006)\s*(\S*)'
+_LOG_FORMAT = r'(SPEC.*_base2006)\s*(\S*)'
 
 # This benchmark can be run with an .iso file in the data directory, a tar file
 # in the data directory, or a tar file preprovisioned in cloud storage. To run

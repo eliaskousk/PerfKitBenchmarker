@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Module to install, uninstall, and parse results for SPEC CPU 2006 and 2017.
+"""Module to install, uninstall, and parse results for SPEC CPU 2000, 2006 and 2017.
 """
 
 import hashlib
@@ -392,7 +392,7 @@ def _PrepareWithIsoFile(vm, speccpu_vm_state):
   vm.RobustRemoteCommand('yes | {0}'.format(install_script_path))
 
 
-def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
+def _ExtractScore(stdout, vm, keep_partial_results, version, runspec_metric):
   """Extracts the SPEC(int|fp) score from stdout.
 
   Args:
@@ -401,6 +401,7 @@ def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
     keep_partial_results: Boolean. True if partial results should
         be extracted in the event that not all benchmarks were successfully
         run. See the "runspec_keep_partial_results" flag for more info.
+    version: String. The version of SPEC, either 2000, 2006 or 2017.
     runspec_metric: String. Indicates whether this is spec speed or rate run.
 
   Sample input for SPECint (Refer to unit test for more examples):
@@ -451,7 +452,7 @@ def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
   """
   results = []
   speccpu_vm_state = getattr(vm, VM_STATE_ATTR, None)
-  re_begin_section = re.compile('^={1,}')
+  re_begin_section = re.compile('^\s{,3}={1,}')
   re_end_section = re.compile(speccpu_vm_state.log_format)
   result_section = []
   in_result_section = False
@@ -495,13 +496,18 @@ def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
       'runspec_enable_32bit': str(FLAGS.runspec_enable_32bit),
       'runspec_define': FLAGS.runspec_define,
       'runspec_metric': runspec_metric,
-      'spec_runmode': FLAGS.spec_runmode,
-      'spec17_copies': FLAGS.spec17_copies,
-      'spec17_threads': FLAGS.spec17_threads,
-      'spec17_fdo': FLAGS.spec17_fdo,
-      'spec17_subset': FLAGS.spec17_subset,
-      'gcc_version': build_tools.GetVersion(vm, 'gcc')
+      'spec_runmode': FLAGS.spec_runmode
   }
+
+  if version == '2017':
+    metadata_2017 = {
+        'spec17_copies': FLAGS.spec17_copies,
+        'spec17_threads': FLAGS.spec17_threads,
+        'spec17_fdo': FLAGS.spec17_fdo,
+        'spec17_subset': FLAGS.spec17_subset,
+        'gcc_version': build_tools.GetVersion(vm, 'gcc')
+    }
+    metadata.update(metadata_2017)
 
   missing_results = []
   scores = []
@@ -509,7 +515,10 @@ def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
   for benchmark in result_section:
     # Skip over failed runs, but count them since they make the overall
     # result invalid.
-    not_reported = benchmark.count('NR')
+    if version == '2000':
+      not_reported = benchmark.count('X')
+    else:
+      not_reported = benchmark.count('NR')
     if not_reported > 1 or (
         not_reported == 1 and FLAGS.spec_runmode != PEAK_MODE):
       logging.warning('SPEC CPU missing result: %s', benchmark)
@@ -518,8 +527,13 @@ def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
 
     base_score_str, peak_score_str = None, None
     if FLAGS.spec_runmode == BASE_MODE:
-      # name, copies/threads, time, score, misc
-      name, _, _, base_score_str, _ = benchmark.split()
+      if version == '2000':
+        # name, copies/threads, time, score, misc with * at the end
+        name, _, _, base_score_str = benchmark.split()
+        base_score_str = base_score_str[:-1]
+      else:
+        # name, copies/threads, time, score
+        name, _, _, base_score_str, _ = benchmark.split()
     elif FLAGS.spec_runmode == PEAK_MODE:
       # name, base_not_reported(NR), copies/threads, time, score, misc
       name, _, _, _, peak_score_str, _ = benchmark.split()
@@ -531,10 +545,12 @@ def _ExtractScore(stdout, vm, keep_partial_results, runspec_metric):
       name += ':speed'
     if base_score_str:
       base_score_float = float(base_score_str)
+      base_score_float = base_score_float / 100.0 if version == '2000' else base_score_float
       scores.append(base_score_float)
       results.append(sample.Sample(str(name), base_score_float, '', metadata))
     if peak_score_str:
       peak_score_float = float(peak_score_str)
+      peak_score_float = peak_score_float / 100.0 if version == '2000' else peak_score_float
       results.append(
           sample.Sample(str(name) + ':peak', peak_score_float, '', metadata))
 
@@ -588,13 +604,15 @@ def ParseOutput(vm, log_files, is_partial_results, runspec_metric,
   speccpu_vm_state = getattr(vm, VM_STATE_ATTR, None)
   results = []
 
+  version = speccpu_vm_state.package_name[7:]
+
   for log in log_files:
     results_dir = results_directory or '%s/result' % speccpu_vm_state.spec_dir
     stdout, _ = vm.RemoteCommand(
         "%s 'cat %s/%s'" % (results_dir, log), should_log=True)
     results.extend(_ExtractScore(
         stdout, vm, FLAGS.runspec_keep_partial_results or is_partial_results,
-        runspec_metric))
+        version, runspec_metric))
 
   return results
 
@@ -617,12 +635,14 @@ def ParseOutputFromCharonSSP(vm, log_files, is_partial_results, runspec_metric,
   speccpu_vm_state = getattr(vm, VM_STATE_ATTR, None)
   results = []
 
+  version = speccpu_vm_state.package_name.split('_', 1)[0][7:]
+
   for log in log_files:
     results_dir = results_directory or '%s/result' % speccpu_vm_state.spec_dir
-    stdout, _ = vm.RemoteCommand('cat %s/%s' % (results_dir, log), should_log=True)
+    stdout, _ = vm.RemoteCommand('cat %s/%s' % (results_dir, log), nested=True, should_log=True)
     results.extend(_ExtractScore(
         stdout, vm, FLAGS.runspec_keep_partial_results or is_partial_results,
-        runspec_metric))
+        version, runspec_metric))
 
   return results
 
