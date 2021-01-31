@@ -480,6 +480,7 @@ def _ExtractScore(stdout, vm, keep_partial_results, version, runspec_metric):
         spec_name += ':speed'
       try:
         spec_score = float(match.group(2))
+        spec_score = spec_score / 100.0 if version == '2000' else spec_score
       except ValueError:
         # Partial results may get reported as '--' instead of a number.
         spec_score = None
