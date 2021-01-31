@@ -176,16 +176,17 @@ flags.DEFINE_string(
     'charon_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep"}',
     'Charon configuration')
 
+CHARON_SSP_VDISK_VERSION = '1.0.2'
 CHARON_SSP_VDISK_SHA256SUM = {
-    'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd':
-      '05db5ffd956fd0296c26fc75e233a171072d4230380e616d2db02ab9b41ff1fd'
+      'sol-10-u11-benchmark-vdisk-v' + CHARON_SSP_VDISK_VERSION + '.tar.zstd':
+        'e57d279b1cf8e2060634426be39470833ee3bd28286a1f12378aeb1d06bd7711'
 }
 CHARON_SSP_VDISK_FALLBACK_URL = {
-    'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd':
-      'http://fileserver.stromasys.com/file.tar.zstd'
+    'sol-10-u11-benchmark-vdisk-v' + CHARON_SSP_VDISK_VERSION + '.tar.zstd':
+      'http://fileserver.stromasys.com/path/to/sol-10-u11-benchmark-vdisk-v' + CHARON_SSP_VDISK_VERSION + '.tar.zstd'
 }
-CHARON_SSP_VDISK_ARCHIVE = 'sol-10-u11-benchmark-vdisk-v1.0.0.tar.zstd'
-CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/10U11/v1.0.0'
+CHARON_SSP_VDISK_ARCHIVE = 'sol-10-u11-benchmark-vdisk-v' + CHARON_SSP_VDISK_VERSION + '.tar.zstd'
+CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/10U11/v' + CHARON_SSP_VDISK_VERSION
 CHARON_SSP_VDISK_INSTALL_FOLDER = 'charon/vdisk'
 CHARON_SSP_VDISK_FILENAME = 'sol-10-u11-benchmark.vdisk'
 CHARON_SSP_CONFIG = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
