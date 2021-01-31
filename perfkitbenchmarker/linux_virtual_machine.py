@@ -176,10 +176,10 @@ flags.DEFINE_string(
     'charon_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep"}',
     'Charon configuration')
 
-CHARON_SSP_VDISK_VERSION = '1.0.2'
+CHARON_SSP_VDISK_VERSION = '1.0.3'
 CHARON_SSP_VDISK_SHA256SUM = {
       'sol-10-u11-benchmark-vdisk-v' + CHARON_SSP_VDISK_VERSION + '.tar.zstd':
-        'e57d279b1cf8e2060634426be39470833ee3bd28286a1f12378aeb1d06bd7711'
+        '4c61505e35faf7dd56110c50cc42ad821b200587a5cafce948b2758acc27b83d'
 }
 CHARON_SSP_VDISK_FALLBACK_URL = {
     'sol-10-u11-benchmark-vdisk-v' + CHARON_SSP_VDISK_VERSION + '.tar.zstd':
