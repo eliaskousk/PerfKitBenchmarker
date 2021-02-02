@@ -173,7 +173,7 @@ flags.DEFINE_string('charon_name', 'charon_ssp',
                   'PKB should provision and boot this Charon emulator')
 
 flags.DEFINE_string(
-    'charon_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep"}',
+    'charon_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep", "host_nic": "ens6"}',
     'Charon configuration')
 
 CHARON_SSP_VDISK_VERSION = '1.0.3'
@@ -502,18 +502,40 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
 
     # Update Charon SSP config file
 
+    # Default values
     default_config = { "machine": "SUN-4U",
                        "vcpus": 2,
                        "memory" : 8192,
                        "ht": "on",
-                       "idle": "sleep" }
+                       "idle": "sleep",
+                       "host_nic": "ens6"
+                       }
 
+    # Flag keys to config file keys mapping
+    config_map = { "machine": "machine",
+                   "vcpus": "number",
+                   "memory" : "size",
+                   "ht": "ht",
+                   "idle": "idle",
+                   "host_nic": "interface"
+                   }
+
+    # Get user supplied config from cmd flags
     config = json.loads(FLAGS.charon_config)
+
+    # AWS metal instances have different host nic
+    if FLAGS.cloud == 'AWS':
+      metal =  re.search(r'.*\.metal$', FLAGS.machine_type, re.I)
+      if metal:
+        default_config["host_nic"] = 'enp126s0'
+        if "host_nic" in config and config["host_nic"] == 'ens6': # Also fix wrong host nic from cmd flags
+          config["host_nic"] = default_config["host_nic"]
+
     sed = ''
     for key, value in default_config.items():
       if key not in config:
         config[key] = value
-      sed += "-e 's/^" + key + " = .+/" + key + " = %s/g' " % config[key]
+      sed += "-e 's/^" + config_map[key] + " = .+/" + config_map[key] + " = %s/g' " % config[key]
 
     sed += "-e 's#^lun_0 = .+#lun_0 = %s/%s#g' " % (vdisk_install_path, CHARON_SSP_VDISK_FILENAME)
     sed += "-e 's/^mac = .+/mac = %s/g'" % self.secondary_nic.mac_address
