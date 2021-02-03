@@ -523,13 +523,28 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     # Get user supplied config from cmd flags
     config = json.loads(FLAGS.charon_config)
 
-    # AWS metal instances have different host nic
-    if FLAGS.cloud == 'AWS':
-      metal =  re.search(r'.*\.metal$', FLAGS.machine_type, re.I)
-      if metal:
-        default_config["host_nic"] = 'enp126s0'
-        if "host_nic" in config and config["host_nic"] == 'ens6': # Also fix wrong host nic from cmd flags
-          config["host_nic"] = default_config["host_nic"]
+    #
+    # Find the secondary network interface name
+    #
+
+    # Old method: AWS metal instances have different host nic
+    # if FLAGS.cloud == 'AWS':
+    #   metal =  re.search(r'.*\.metal$', FLAGS.machine_type, re.I)
+    #   if metal:
+    #     default_config["host_nic"] = 'enp126s0'
+    #     if "host_nic" in config and config["host_nic"] == 'ens6': # Also fix wrong host nic from cmd flags
+    #       config["host_nic"] = default_config["host_nic"]
+
+    # New method: Find interface name with ip command regardless of machine type
+    # ip link show output:
+    # 1: The loopback interface
+    # 2: The primary interface
+    # 3: The secondary interface and what we are looking for
+    interface, _ = self.RemoteCommand("/usr/sbin/ip link show | grep '3: en' | awk -F: '{print $2}'")
+    interface = interface.strip()
+    found = re.search(r'^en\S+$', interface, re.I) # Make sure we found a proper interface name
+    if found:
+      default_config["host_nic"] = interface
 
     sed = ''
     for key, value in default_config.items():
