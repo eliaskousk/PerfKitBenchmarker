@@ -173,7 +173,7 @@ flags.DEFINE_string('charon_name', 'charon_ssp',
                   'PKB should provision and boot this Charon emulator')
 
 flags.DEFINE_string(
-    'charon_config', '{"machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep", "host_nic": "ens6"}',
+    'charon_config', '{"bin": "ssp4u", "machine": "SUN-4U", "vcpus": 2, "memory": 8192, "ht": "on", "idle": "sleep", "host_nic": "ens6"}',
     'Charon configuration')
 
 CHARON_SSP_VDISK_VERSION = '1.0.3'
@@ -190,6 +190,7 @@ CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/10U11/v' + CHARON_SSP_VDISK_VERSION
 CHARON_SSP_VDISK_INSTALL_FOLDER = 'charon/vdisk'
 CHARON_SSP_VDISK_FILENAME = 'sol-10-u11-benchmark.vdisk'
 CHARON_SSP_CONFIG = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
+CHARON_SSP_RUN = '/opt/charon-ssp/run.ssp.sh'
 
 RETRYABLE_SSH_RETCODE = 255
 
@@ -503,7 +504,8 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     # Update Charon SSP config file
 
     # Default values
-    default_config = { "machine": "SUN-4U",
+    default_config = { "bin": "ssp4u",
+                       "machine": "SUN-4U",
                        "vcpus": 2,
                        "memory" : 8192,
                        "ht": "on",
@@ -512,7 +514,8 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
                        }
 
     # Flag keys to config file keys mapping
-    config_map = { "machine": "machine",
+    config_map = { "bin": "",
+                   "machine": "machine",
                    "vcpus": "number",
                    "memory" : "size",
                    "ht": "ht",
@@ -550,7 +553,8 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     for key, value in default_config.items():
       if key not in config:
         config[key] = value
-      sed += "-e 's/^" + config_map[key] + " = .+/" + config_map[key] + " = %s/g' " % config[key]
+      if config_map[key] != '':
+        sed += "-e 's/^" + config_map[key] + " = .+/" + config_map[key] + " = %s/g' " % config[key]
 
     sed += "-e 's#^lun_0 = .+#lun_0 = %s/%s#g' " % (vdisk_install_path, CHARON_SSP_VDISK_FILENAME)
     sed += "-e 's/^mac = .+/mac = %s/g'" % self.secondary_nic.mac_address
@@ -558,9 +562,18 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     cmd = 'sudo sed -i -E %s %s' % (sed, CHARON_SSP_CONFIG)
     stdout, _ = self.RemoteCommand(cmd)
 
+    # Update Charon SSP run script
+    sed = "-e 's#^/opt/charon-ssp/ssp-4u/%s#/opt/charon-ssp/ssp-4u/%s#g' " %  (default_config['bin'], config['bin'])
+    cmd = 'sudo sed -i -E %s %s' % (sed, CHARON_SSP_RUN)
+    stdout, _ = self.RemoteCommand(cmd)
+
+    # Install mising libicu dependency for server JIT
+    cmd = 'sudo yum -y install libicu'
+    stdout, _ = self.RemoteCommand(cmd)
+
   def BootCharonSSP(self):
     logging.info('Booting Charon SSP on %s', self)
-    cmd = 'sudo /opt/charon-ssp/run.ssp.sh'
+    cmd = 'sudo %s' % CHARON_SSP_RUN
     stdout, _ = self.RemoteCommand(cmd)
 
   @vm_util.Retry(log_errors=False, poll_interval=1)
