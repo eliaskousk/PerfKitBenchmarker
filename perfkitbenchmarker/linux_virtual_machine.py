@@ -190,7 +190,9 @@ CHARON_SSP_VDISK_BUCKET_FOLDER = 'solaris/10U11/v' + CHARON_SSP_VDISK_VERSION
 CHARON_SSP_VDISK_INSTALL_FOLDER = 'charon/vdisk'
 CHARON_SSP_VDISK_FILENAME = 'sol-10-u11-benchmark.vdisk'
 CHARON_SSP_CONFIG = '/opt/charon-agent/ssp-agent/ssp/sun-4u/BENCH-4U/BENCH-4U.cfg'
-CHARON_SSP_RUN = '/opt/charon-ssp/run.ssp.sh'
+CHARON_SSP_INSTALL = '/opt/charon-ssp'
+CHARON_SSP_RUN = '%s/run.ssp.sh' % CHARON_SSP_INSTALL
+CHARON_SSP_PLUS_MODULE = '%s/ssp-4u/dune/dune-7.8.ko' % CHARON_SSP_INSTALL
 
 RETRYABLE_SSH_RETCODE = 255
 
@@ -568,8 +570,15 @@ class BaseLinuxMixin(virtual_machine.BaseOsMixin):
     stdout, _ = self.RemoteCommand(cmd)
 
     # Install mising libicu dependency for server JIT
-    cmd = 'sudo yum -y install libicu'
-    stdout, _ = self.RemoteCommand(cmd)
+    if re.search(r'jit', config['bin']):
+      cmd = 'sudo yum -y install libicu'
+      stdout, _ = self.RemoteCommand(cmd)
+
+    # Install needed kernel module for SSP+
+    if re.search(r'plus', config['bin']):
+      cmd = 'sudo ln -s %s /lib/modules/`uname -r`/extra/charon.ko && ' % CHARON_SSP_PLUS_MODULE
+      cmd += 'sudo depmod -a && sudo modprobe charon'
+      stdout, _ = self.RemoteCommand(cmd)
 
   def BootCharonSSP(self):
     logging.info('Booting Charon SSP on %s', self)
